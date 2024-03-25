@@ -1,0 +1,34 @@
+<launch>
+
+    <include file="$(find interbotix_xslocobot_descriptions)/launch/xslocobot_description.launch">
+    <arg name="robot_model"                       value="$(arg robot_model)"/>
+    <arg name="robot_name"                        value="$(arg robot_name)"/>
+    <arg name="base_type"                         value="$(arg base_type)"/>
+    <arg name="show_lidar"                        value="$(arg show_lidar)"/>
+    <arg name="show_gripper_bar"                  value="$(arg show_gripper_bar)"/>
+    <arg name="show_gripper_fingers"              value="$(arg show_gripper_fingers)"/>
+    <arg name="external_urdf_loc"                 value="$(arg external_urdf_loc)"/>
+    <arg name="use_rviz"                          value="$(arg use_rviz)"/>
+    <arg name="rviz_frame"                        value="$(arg rviz_frame)"/>
+    <arg name="use_joint_pub"                     value="true"/>
+    <arg name="rate"                              value="100"/>
+    <arg name="source_list"                       value="[dynamixel/joint_states, mobile_base/joint_states]"/>
+  </include>
+
+
+
+    <!-- Cartographer 2D mapping -->
+    <node name="cartographer_node" pkg="cartographer_ros"
+        type="cartographer_node" args="
+            -configuration_directory $(find locobot)/config/carto
+            -configuration_basename locobot_relocalization.lua"
+        output="screen">
+        <remap from="/imu" to="/locobot/mobile_base/sensors/imu_data" />
+        <remap from="" to=""/>
+    </node>
+
+    <node name="fix_sim_time" pkg="axs_localization" type="fix_sim_time.py" output="screen" />
+
+    <node name="cartographer_occupancy_grid_node" pkg="cartographer_ros"
+        type="cartographer_occupancy_grid_node" args="-resolution 0.01" />
+</launch>
