@@ -1,7 +1,4 @@
 <launch>
-   <include file="$(find locobot)/launch/locobot.launch">
-
-   </include>
     <!-- Cartographer 2D mapping -->
     <node name="cartographer_node" pkg="cartographer_ros"
         type="cartographer_node" args="
@@ -9,10 +6,8 @@
             -configuration_basename locobot_relocalization.lua"
         output="screen">
         <remap from="/imu" to="/locobot/mobile_base/sensors/imu_data" />
-        <remap from="" to=""/>
+        <remap from="/scan" to="/locobot/scan" />
     </node>
-
-    <node name="fix_sim_time" pkg="axs_localization" type="fix_sim_time.py" output="screen" />
 
     <node name="cartographer_occupancy_grid_node" pkg="cartographer_ros"
         type="cartographer_occupancy_grid_node" args="-resolution 0.01" />

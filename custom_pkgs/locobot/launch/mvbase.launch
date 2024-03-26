@@ -1,5 +1,6 @@
 <launch>
   <arg name="robot_name"                        default="locobot"/>
+  <arg name="base_type"                         default="kobuki"/>
 
   <arg if="$(eval base_type == 'kobuki')"  name="move_base_cmd_vel_topic" default="mobile_base/commands/velocity"/>
   <arg if="$(eval base_type == 'create3')" name="move_base_cmd_vel_topic" default="/mobile_base/cmd_vel"/>

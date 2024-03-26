@@ -1,0 +1,23 @@
+<launch>
+    <!-- Cartographer 2D localization -->
+    <arg name="map_dir" />
+
+    <node name="cartographer_node" pkg="cartographer_ros"
+        type="cartographer_node" args="
+            -configuration_directory $(find locobot)/config/carto
+            -configuration_basename locobot.lua
+            -load_state_filename $(arg map_dir)/map.pbstream"
+        output="screen">
+        <remap from="/imu" to="/locobot/mobile_base/sensors/imu_data" />
+        <remap from="/scan" to="/locobot/scan" />
+    </node>
+
+    <node name="cartographer_occupancy_grid_node" pkg="cartographer_ros"
+        type="cartographer_occupancy_grid_node" args="-resolution 0.01" />
+
+    <node name="cartographer_initial_pose" pkg="cartographer_initial_pose" type="initial_pose_listener" output="screen">
+        <param name="configuration_directory" value="$(find locobot)/config/carto" />
+        <param name="configuration_basename" value="locobot.lua" />
+    </node>
+
+</launch>
