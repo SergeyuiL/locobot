@@ -5,7 +5,7 @@
             -configuration_directory $(find locobot)/config/carto
             -configuration_basename locobot_relocalization.lua"
         output="screen">
-        <remap from="/imu" to="/locobot/mobile_base/sensors/imu_data" />
+        <remap from="/imu" to="/locobot/mobile_base/sensors/imu_data_raw" />
         <remap from="/scan" to="/locobot/scan" />
     </node>
 

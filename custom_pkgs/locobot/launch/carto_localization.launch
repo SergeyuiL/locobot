@@ -8,7 +8,7 @@
             -configuration_basename locobot.lua
             -load_state_filename $(arg map_dir)/map.pbstream"
         output="screen">
-        <remap from="/imu" to="/locobot/mobile_base/sensors/imu_data" />
+        <remap from="/imu" to="/locobot/mobile_base/sensors/imu_data_raw" />
         <remap from="/scan" to="/locobot/scan" />
     </node>
 
