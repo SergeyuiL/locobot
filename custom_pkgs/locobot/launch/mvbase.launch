@@ -1,0 +1,33 @@
+<launch>
+  <arg name="robot_name"                        default="locobot"/>
+
+  <arg if="$(eval base_type == 'kobuki')"  name="move_base_cmd_vel_topic" default="mobile_base/commands/velocity"/>
+  <arg if="$(eval base_type == 'create3')" name="move_base_cmd_vel_topic" default="/mobile_base/cmd_vel"/>
+
+  <arg if="$(eval base_type == 'kobuki')"  name="odom_topic" default="mobile_base/odom"/>
+  <arg if="$(eval base_type == 'create3')" name="odom_topic" default="/mobile_base/odom"/>
+
+  <node
+    pkg="move_base"
+    type="move_base"
+    respawn="false"
+    name="move_base"
+    output="screen">
+    <rosparam file="$(find locobot)/config/mvbase/local_costmap_all_params.yaml" command="load"/>
+    <rosparam file="$(find locobot)/config/mvbase/global_costmap_all_params.yaml" command="load"/>
+    <rosparam file="$(find locobot)/config/mvbase/common_costmap_params.yaml" command="load" ns="global_costmap"/>
+    <rosparam file="$(find locobot)/config/mvbase/common_costmap_params.yaml" command="load" ns="local_costmap"/>
+    <rosparam file="$(find locobot)/config/mvbase/local_planner_params.yaml"  command="load"/>
+    <rosparam file="$(find locobot)/config/mvbase/global_planner_params.yaml" command="load"/>
+    <rosparam file="$(find locobot)/config/mvbase/move_base_params.yaml"      command="load"/>
+
+    <param name="global_costmap/robot_base_frame" value="$(arg robot_name)/base_footprint"/>
+    <param name="local_costmap/global_frame"      value="$(arg robot_name)/odom"/>
+    <param name="local_costmap/robot_base_frame"  value="$(arg robot_name)/base_footprint"/>
+
+    <remap from="cmd_vel"                         to="$(arg move_base_cmd_vel_topic)"/>
+    <remap from="odom"                            to="$(arg odom_topic)"/>
+  </node>
+
+
+</launch>
