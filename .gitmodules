@@ -13,3 +13,6 @@
 [submodule "interbotix_ros_toolboxes/third_party_libraries/ModernRobotics"]
 	path = interbotix_ros_toolboxes/third_party_libraries/ModernRobotics
 	url = https://github.com/interbotix/ModernRobotics.git
+[submodule "custom_pkgs/ps4_joy"]
+	path = custom_pkgs/ps4_joy
+	url = https://github.com/SergeyuiL/ps4_joy.git
