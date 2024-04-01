@@ -24,11 +24,11 @@
   <arg name="filters"                           default="pointcloud"/>
   <arg name="align_depth"                       default="true"/>
   <arg name="color_fps"                         default="30"/>
-  <arg name="color_width"                       default="1280"/>
-  <arg name="color_height"                      default="720"/>
+  <arg name="color_width"                       default="640"/>
+  <arg name="color_height"                      default="480"/>
   <arg name="depth_fps"                         default="30"/>
-  <arg name="depth_width"                       default="1280"/>
-  <arg name="depth_height"                      default="720"/>
+  <arg name="depth_width"                       default="640"/>
+  <arg name="depth_height"                      default="480"/>
   <arg name="load_configs"                      default="true"/>
 
   <!-- static transform pub arguments -->
@@ -73,12 +73,12 @@
   </group>
 
   <!-- move base -->
-  <include file="$(find locobot)/launch/mvbase.launch" ns="$(arg robot_name)"> 
+  <include file="$(find locobot)/launch/mvbase.launch"> 
     <arg name="robot_name" value="$(arg robot_name)"/>
     <arg name="base_type"  value="$(arg base_type)"/>
   </include>
 
   <!-- reset -->
-  <node if="$(arg reset)" pkg="locobot" type="reset.py" name="reset2sleep_pose" output="screen"/>
+  <!-- <node if="$(arg reset)" pkg="locobot" type="reset.py" name="reset2sleep_pose" output="screen"/> -->
 
 </launch>

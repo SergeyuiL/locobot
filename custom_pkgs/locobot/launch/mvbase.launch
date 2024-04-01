@@ -1,6 +1,6 @@
 <launch>
   <arg name="robot_name"                        default="locobot"/>
-  <arg name="base_type"                         default="kobuki"/>
+  <arg name="base_type"                         default="$(optenv INTERBOTIX_XSLOCOBOT_BASE_TYPE kobuki)"/>
 
   <arg if="$(eval base_type == 'kobuki')"  name="move_base_cmd_vel_topic" default="mobile_base/commands/velocity"/>
   <arg if="$(eval base_type == 'create3')" name="move_base_cmd_vel_topic" default="/mobile_base/cmd_vel"/>
@@ -27,6 +27,7 @@
     <param name="local_costmap/robot_base_frame"  value="$(arg robot_name)/base_footprint"/>
 
     <remap from="cmd_vel"                         to="$(arg move_base_cmd_vel_topic)"/>
+    <remap from="map"                             to="/map"/>
     <remap from="odom"                            to="$(arg odom_topic)"/>
   </node>
 
