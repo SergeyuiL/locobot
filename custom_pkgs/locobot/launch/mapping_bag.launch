@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="bagfile" />
+  <param name="use_sim_time" value="true" />
+
+  <include file="$(find locobot)/launch/carto_slam.launch">
+    <!-- <arg name="visualization" value="true" /> -->
+  </include>
+
+  <node name="player" pkg="rosbag" type="play" output="screen" args="--clock --rate=1.0 $(arg bagfile) --topics /ep/odom /imu/data_raw /rplidar/scan" />
+
+</launch>

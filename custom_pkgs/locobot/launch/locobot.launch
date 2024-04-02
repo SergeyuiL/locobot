@@ -7,7 +7,9 @@
 
   <arg name="localization"                      default="false"/>
   <arg name="map_dir"                           default="$(find locobot)/maps/0326"/>
-  <arg name="reset"                             default="false"/>
+  <arg name="pure_run"                          default="false"/>
+  <arg name="use_joy"                           default="false"/>
+
 
   <!-- interbotix_xslocobot_control Launch File Arguments -->
   <arg name="robot_name"                        default="locobot"/>
@@ -59,51 +61,97 @@
     <arg name="use_sim"                           value="$(arg use_sim)"/>
   </include>
 
-  <!-- cartographer -->
-  <!-- localization -->
-  <group if="$(arg localization)">
-    <include file="$(find locobot)/launch/carto_localization.launch">
-        <arg name="map_dir" value="$(arg map_dir)" />
-    </include>
+  <group if="$(arg use_joy)">
+    <!-- interbotix_xslocobot_joy Launch File Arguments -->
+    <!-- <arg name="threshold"                         default="0.75"/>
+    <arg name="controller"                        default="ps4"/>
+    <arg if="$(eval robot_model == 'locobot_base')"     name="mode_type" value="base"/>
+    <arg unless="$(eval robot_model == 'locobot_base')" name="mode_type" value="all"/>
+    <arg name="mode_configs" default="$(find interbotix_xslocobot_joy)/config/modes_$(arg mode_type).yaml"/>
+
+    <node
+      pkg="joy"
+      type="joy_node"
+      name="ps3_joy"
+      output="screen"
+      ns="$(arg robot_name)">
+      <param name="dev"                             value="/dev/input/js0"/>
+      <remap from="joy"                             to="commands/joy_raw"/>
+    </node>
+
+    <node
+      pkg="interbotix_xslocobot_joy"
+      type="xslocobot_joy"
+      name="xslocobot_joy"
+      output="screen"
+      ns="$(arg robot_name)">
+      <param name="threshold"                       value="$(arg threshold)"/>
+      <param name="controller"                      value="$(arg controller)"/>
+    </node>
+
+    <node
+      pkg="interbotix_xslocobot_joy"
+      type="xslocobot_robot"
+      name="xslocobot_robot"
+      output="screen"
+      ns="$(arg robot_name)">
+      <param name="robot_model"                     value="$(arg robot_model)"/>
+      <param name="use_base"                        value="$(arg use_base)"/>
+      <param name="base_type"                       value="$(arg base_type)"/>
+    </node> -->
+
+    <!-- my custom joy script -->
+    <include file="$(find ps4_joy)/launch/ps4ctrler.launch"/>
+
   </group>
 
-  <!-- mapping -->
-  <group unless="$(arg localization)">
-      <include file="$(find locobot)/launch/carto_slam.launch" />
+
+  <group unless="$(arg pure_run)">
+    <!-- cartographer -->
+    <!-- localization -->
+    <group if="$(arg localization)">
+      <include file="$(find locobot)/launch/carto_localization.launch">
+          <arg name="map_dir" value="$(arg map_dir)" />
+      </include>
+    </group>
+
+    <!-- mapping -->
+    <group unless="$(arg localization)">
+        <include file="$(find locobot)/launch/carto_slam.launch" />
+    </group>
+
+    <!-- move base -->
+    <arg if="$(eval base_type == 'kobuki')"  name="move_base_cmd_vel_topic" default="mobile_base/commands/velocity"/>
+    <arg if="$(eval base_type == 'create3')" name="move_base_cmd_vel_topic" default="/mobile_base/cmd_vel"/>
+
+    <arg if="$(eval base_type == 'kobuki')"  name="odom_topic" default="mobile_base/odom"/>
+    <arg if="$(eval base_type == 'create3')" name="odom_topic" default="/mobile_base/odom"/>
+
+    <node
+      pkg="move_base"
+      type="move_base"
+      respawn="false"
+      name="move_base"
+      output="screen"
+      ns="$(arg robot_name)">
+      <rosparam file="$(find locobot)/config/mvbase/local_costmap_all_params.yaml" command="load"/>
+      <rosparam file="$(find locobot)/config/mvbase/global_costmap_all_params.yaml" command="load"/>
+      <rosparam file="$(find locobot)/config/mvbase/common_costmap_params.yaml" command="load" ns="global_costmap"/>
+      <rosparam file="$(find locobot)/config/mvbase/common_costmap_params.yaml" command="load" ns="local_costmap"/>
+      <rosparam file="$(find locobot)/config/mvbase/local_planner_params.yaml"  command="load"/>
+      <rosparam file="$(find locobot)/config/mvbase/global_planner_params.yaml" command="load"/>
+      <rosparam file="$(find locobot)/config/mvbase/move_base_params.yaml"      command="load"/>
+
+      <param name="global_costmap/robot_base_frame" value="$(arg robot_name)/base_footprint"/>
+      <param name="local_costmap/global_frame"      value="$(arg robot_name)/odom"/>
+      <param name="local_costmap/robot_base_frame"  value="$(arg robot_name)/base_footprint"/>
+
+      <remap from="cmd_vel"                         to="$(arg move_base_cmd_vel_topic)"/>
+      <remap from="map"                             to="/map"/>
+      <remap from="odom"                            to="$(arg odom_topic)"/>
+    </node>
+
   </group>
 
-  <!-- move base -->
-  <arg if="$(eval base_type == 'kobuki')"  name="move_base_cmd_vel_topic" default="mobile_base/commands/velocity"/>
-  <arg if="$(eval base_type == 'create3')" name="move_base_cmd_vel_topic" default="/mobile_base/cmd_vel"/>
-
-  <arg if="$(eval base_type == 'kobuki')"  name="odom_topic" default="mobile_base/odom"/>
-  <arg if="$(eval base_type == 'create3')" name="odom_topic" default="/mobile_base/odom"/>
-
-  <node
-    pkg="move_base"
-    type="move_base"
-    respawn="false"
-    name="move_base"
-    output="screen"
-    ns="$(arg robot_name)">
-    <rosparam file="$(find locobot)/config/mvbase/local_costmap_all_params.yaml" command="load"/>
-    <rosparam file="$(find locobot)/config/mvbase/global_costmap_all_params.yaml" command="load"/>
-    <rosparam file="$(find locobot)/config/mvbase/common_costmap_params.yaml" command="load" ns="global_costmap"/>
-    <rosparam file="$(find locobot)/config/mvbase/common_costmap_params.yaml" command="load" ns="local_costmap"/>
-    <rosparam file="$(find locobot)/config/mvbase/local_planner_params.yaml"  command="load"/>
-    <rosparam file="$(find locobot)/config/mvbase/global_planner_params.yaml" command="load"/>
-    <rosparam file="$(find locobot)/config/mvbase/move_base_params.yaml"      command="load"/>
-
-    <param name="global_costmap/robot_base_frame" value="$(arg robot_name)/base_footprint"/>
-    <param name="local_costmap/global_frame"      value="$(arg robot_name)/odom"/>
-    <param name="local_costmap/robot_base_frame"  value="$(arg robot_name)/base_footprint"/>
-
-    <remap from="cmd_vel"                         to="$(arg move_base_cmd_vel_topic)"/>
-    <remap from="map"                             to="/map"/>
-    <remap from="odom"                            to="$(arg odom_topic)"/>
-  </node>
-
-  <!-- reset -->
-  <!-- <node if="$(arg reset)" pkg="locobot" type="reset.py" name="reset2sleep_pose" output="screen"/> -->
 
 </launch>
