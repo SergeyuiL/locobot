@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="imu" params="robot_name imu_link_name imu_parent_link">
+    <!-- IMU Sensor Link -->
+    <link name="${robot_name}/${imu_link_name}">
+      <inertial>
+        <mass value="0.05"/> <!-- Adjust based on your IMU's actual mass -->
+        <inertia ixx="1e-6" iyy="1e-6" izz="1e-6" ixy="0" ixz="0" iyz="0"/> <!-- Placeholder inertia, adjust as needed -->
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.05 0.05 0.05"/> <!-- Placeholder dimensions, adjust as needed -->
+        </geometry>
+        <material name="grey"/>
+      </visual>
+    </link>
+
+    <!-- Fixed Joint to Attach IMU to the Robot -->
+    <joint name="${robot_name}/${imu_link_name}_joint" type="fixed">
+      <origin xyz="0.1 0 0.05" rpy="0 0 ${pi}"/> <!-- Adjust xyz and rpy based on the desired position and orientation -->
+      <parent link="${robot_name}/${imu_parent_link}"/>
+      <child link="${robot_name}/${imu_link_name}"/>
+    </joint>
+  </xacro:macro>
+
+</robot>
