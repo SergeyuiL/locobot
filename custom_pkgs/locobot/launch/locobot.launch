@@ -9,6 +9,7 @@
   <arg name="map_dir"                           default="$(find locobot)/maps/0326"/>
   <arg name="pure_run"                          default="false"/>
   <arg name="use_joy"                           default="false"/>
+  <arg name="use_wit_imu"                       default="true"/>
 
 
   <!-- interbotix_xslocobot_control Launch File Arguments -->
@@ -37,6 +38,10 @@
   <arg name="load_transforms"                   default="true"/>
   <arg name="transform_filepath"                default="$(find interbotix_xslocobot_perception)/config/static_transforms.yaml"/>
 
+  <!-- IMU -->
+  <include if="$(arg use_wit_imu)" file="$(find wit_ros_imu)/launch/wit_imu.launch"/>
+
+  <!-- locobot basic -->
   <include file="$(find interbotix_xslocobot_control)/launch/xslocobot_control.launch">
     <arg name="robot_model"                       value="$(arg robot_model)"/>
     <arg name="robot_name"                        value="$(arg robot_name)"/>
