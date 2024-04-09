@@ -28,6 +28,7 @@
     <node pkg="wit_ros_imu" type="wit_$(arg type)_ros.py" name="imu" output="screen">
         <param name="port"               type = "str"    value="/dev/ttyUSB2"/>
         <param name="baud"               type = "int"    value="115200"/>
+		<param name="frame_id"			 type = "str"	 value="locobot/imu_link"/>
     </node>
 
 	<!--

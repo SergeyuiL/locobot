@@ -3,9 +3,9 @@
     <node name="cartographer_node" pkg="cartographer_ros"
         type="cartographer_node" args="
             -configuration_directory $(find locobot)/config/carto
-            -configuration_basename locobot_relocalization.lua"
+            -configuration_basename locobot.lua"
         output="screen">
-        <remap from="/imu" to="/locobot/mobile_base/sensors/imu_data_raw" />
+        <remap from="/imu" to="/wit/imu" />
         <remap from="/scan" to="/locobot/scan" />
     </node>
 

@@ -15,8 +15,6 @@ from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import String
 from tf.transformations import quaternion_from_euler
 
-frame_id = 'imu_link'
-
 
 # 查找 ttyUSB* 设备		Look for ttyUSB* devices
 def find_ttyUSB():
@@ -143,13 +141,13 @@ def handleSerialData(raw_data):
             stamp = rospy.get_rostime()
 
             imu_msg.header.stamp = stamp
-            imu_msg.header.frame_id = "base_link"
+            imu_msg.header.frame_id = frame_id
 
             mag_msg.header.stamp = stamp
-            mag_msg.header.frame_id = "base_link"
+            mag_msg.header.frame_id = frame_id
 
             location_msg.header.stamp = stamp
-            location_msg.header.frame_id = "base_link"
+            location_msg.header.frame_id = frame_id
 
             angle_radian = [angle_degree[i] * math.pi / 180 for i in range(3)]
             qua = quaternion_from_euler(
@@ -384,6 +382,7 @@ if __name__ == "__main__":
     rospy.init_node("imu")
     port = rospy.get_param("~port", "/dev/ttyUSB0")
     baudrate = rospy.get_param("~baud", 9600)
+    frame_id = rospy.get_param("~frame_id", "locobot/imu_link")
     # baudrate = 115200
     print("IMU Type: Normal Port:%s baud:%d" % (port, baudrate))
     imu_msg = Imu()
@@ -405,10 +404,10 @@ if __name__ == "__main__":
         exit(0)
     else:
         # AutoScanSensor()
-        imu_pub = rospy.Publisher("wit/imu", Imu, queue_size=10)
-        mag_pub = rospy.Publisher("wit/mag", MagneticField, queue_size=10)
+        imu_pub = rospy.Publisher("/wit/imu", Imu, queue_size=10)
+        mag_pub = rospy.Publisher("/wit/mag", MagneticField, queue_size=10)
         location_pub = rospy.Publisher(
-            "wit/location", NavSatFix, queue_size=10)
+            "/wit/location", NavSatFix, queue_size=10)
 
         while not rospy.is_shutdown():
             try:
