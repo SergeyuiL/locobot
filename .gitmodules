@@ -16,3 +16,6 @@
 [submodule "custom_pkgs/ps4_joy"]
 	path = custom_pkgs/ps4_joy
 	url = https://github.com/SergeyuiL/ps4_joy.git
+[submodule "custom_pkgs/wit_ros_imu"]
+	path = custom_pkgs/wit_ros_imu
+	url = https://github.com/SergeyuiL/wit_ros_imu.git
