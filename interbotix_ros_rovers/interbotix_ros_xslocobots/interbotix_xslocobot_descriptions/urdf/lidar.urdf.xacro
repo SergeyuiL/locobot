@@ -38,16 +38,16 @@
       <disableFixedJointLumping>true</disableFixedJointLumping>
     </gazebo>
 
-    <!-- <joint name="lidar" type="fixed">
+    <joint name="lidar" type="fixed">
       <origin rpy="0 0 ${pi}" xyz="0 0 0.09425"/>
       <parent link="$(arg robot_name)/lidar_tower_link"/>
       <child link="$(arg robot_name)/laser_frame_link"/>
-    </joint> -->
-    <joint name="lidar" type="fixed">
+    </joint>
+    <!-- <joint name="lidar" type="fixed">
       <origin rpy="0 0 0" xyz="-0.09544 0 0.24"/>
       <parent link="$(arg robot_name)/base_footprint"/>
       <child link="$(arg robot_name)/laser_frame_link"/>
-    </joint>
+    </joint> -->
 
     <gazebo reference="lidar">
       <disableFixedJointLumping>true</disableFixedJointLumping>

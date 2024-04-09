@@ -8,7 +8,7 @@
   <arg name="use_rviz"                          default="false"/>
   <arg name="rviz_frame"                        default="$(arg robot_name)/base_footprint"/>
   <arg name="base_type"                         default="$(optenv INTERBOTIX_XSLOCOBOT_BASE_TYPE kobuki)"/> <!-- 'kobuki', 'create3' -->
-  <arg name="lidar_type"                        default="$(optenv INTERBOTIX_XSLOCOBOT_LIDAR_TYPE rplidar_s2)"/> <!-- 'rplidar_a2m8', 'rplidar_a2m12', 'rplidar_a2' -->
+  <arg name="lidar_type"                        default="$(optenv INTERBOTIX_XSLOCOBOT_LIDAR_TYPE rplidar_a2m8)"/> <!-- 'rplidar_a2m8', 'rplidar_a2m12', 'rplidar_a2' -->
   <arg name="use_base"                          default="true"/>
   <arg name="use_dock"                          default="false"/>
   <arg name="use_lidar"                         default="true"/>
