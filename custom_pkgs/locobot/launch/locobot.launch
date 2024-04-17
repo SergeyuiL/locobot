@@ -68,7 +68,7 @@
 
   <group if="$(arg use_joy)">
     <!-- interbotix_xslocobot_joy Launch File Arguments -->
-    <!-- <arg name="threshold"                         default="0.75"/>
+    <arg name="threshold"                         default="0.75"/>
     <arg name="controller"                        default="ps4"/>
     <arg if="$(eval robot_model == 'locobot_base')"     name="mode_type" value="base"/>
     <arg unless="$(eval robot_model == 'locobot_base')" name="mode_type" value="all"/>
@@ -103,10 +103,10 @@
       <param name="robot_model"                     value="$(arg robot_model)"/>
       <param name="use_base"                        value="$(arg use_base)"/>
       <param name="base_type"                       value="$(arg base_type)"/>
-    </node> -->
+    </node>
 
     <!-- my custom joy script -->
-    <include file="$(find ps4_joy)/launch/ps4ctrler.launch"/>
+    <!-- <include file="$(find ps4_joy)/launch/ps4ctrler.launch"/> -->
 
   </group>
 
