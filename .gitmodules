@@ -19,3 +19,6 @@
 [submodule "custom_pkgs/wit_ros_imu"]
 	path = custom_pkgs/wit_ros_imu
 	url = https://github.com/SergeyuiL/wit_ros_imu.git
+[submodule "custom_pkgs/2d_lidar_undistortion"]
+	path = custom_pkgs/2d_lidar_undistortion
+	url = https://github.com/SergeyuiL/2d_lidar_undistortion.git
