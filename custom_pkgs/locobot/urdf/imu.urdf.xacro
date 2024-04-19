@@ -18,7 +18,7 @@
 
     <!-- Fixed Joint to Attach IMU to the Robot -->
     <joint name="${robot_name}/${imu_link_name}_joint" type="fixed">
-      <origin xyz="-0.14477 -0.031 0.24" rpy="0 0 0"/> <!-- Adjust xyz and rpy based on the desired position and orientation -->
+      <origin xyz="-0.14962 -0.078 0.25" rpy="0 0 0"/> <!-- Adjust xyz and rpy based on the desired position and orientation -->
       <parent link="${robot_name}/${imu_parent_link}"/>
       <child link="${robot_name}/${imu_link_name}"/>
     </joint>
