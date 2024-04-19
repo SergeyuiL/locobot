@@ -31,6 +31,6 @@ def go_to_pose(x, y, theta):
 if __name__ == '__main__':
     try:
         rospy.init_node("test_move_base")
-        go_to_pose(1.0, 2.0, 0.0)
+        go_to_pose(0.8, 0.8, 0.0)
     except rospy.ROSInternalException:
         print("something wrong!")

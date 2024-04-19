@@ -8,7 +8,7 @@ laser_layer:
   observation_sources: rplidar
   rplidar:
     data_type: LaserScan
-    topic: locobot/scan
+    topic: /lidar_undistortion/scan
     marking: true
     clearing: true
     inf_is_valid: true

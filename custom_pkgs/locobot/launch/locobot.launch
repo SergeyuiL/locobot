@@ -159,7 +159,7 @@
     <arg if="$(eval base_type == 'kobuki')"  name="odom_topic" default="mobile_base/odom"/>
     <arg if="$(eval base_type == 'create3')" name="odom_topic" default="/mobile_base/odom"/>
 
-    <node
+    <node unless="$(arg use_joy)"
       pkg="move_base"
       type="move_base"
       respawn="false"
@@ -174,8 +174,9 @@
       <rosparam file="$(find locobot)/config/mvbase/global_planner_params.yaml" command="load"/>
       <rosparam file="$(find locobot)/config/mvbase/move_base_params.yaml"      command="load"/>
 
+      <param name="global_costmap/global_frame"     value="map"/>
       <param name="global_costmap/robot_base_frame" value="$(arg robot_name)/base_footprint"/>
-      <param name="local_costmap/global_frame"      value="$(arg robot_name)/odom"/>
+      <param name="local_costmap/global_frame"      value="map"/>
       <param name="local_costmap/robot_base_frame"  value="$(arg robot_name)/base_footprint"/>
 
       <remap from="cmd_vel"                         to="$(arg move_base_cmd_vel_topic)"/>
