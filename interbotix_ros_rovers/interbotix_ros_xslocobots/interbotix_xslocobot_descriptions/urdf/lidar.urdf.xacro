@@ -44,7 +44,7 @@
       <child link="$(arg robot_name)/laser_frame_link"/>
     </joint> -->
     <joint name="lidar" type="fixed">
-      <origin rpy="0 0 0" xyz="-0.09277 0 0.26"/>
+      <origin rpy="0 0 0" xyz="-0.09277 0 0.25"/>
       <parent link="$(arg robot_name)/base_footprint"/>
       <child link="$(arg robot_name)/laser_frame_link"/>
     </joint>

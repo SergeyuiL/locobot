@@ -11,7 +11,6 @@
   <arg name="use_joy"                           default="false"/>
   <arg name="use_wit_imu"                       default="true"/>
 
-
   <!-- interbotix_xslocobot_control Launch File Arguments -->
   <arg name="robot_name"                        default="locobot"/>
   <arg name="show_gripper_bar"                  default="true"/>
@@ -33,6 +32,7 @@
   <arg name="depth_width"                       default="640"/>
   <arg name="depth_height"                      default="480"/>
   <arg name="load_configs"                      default="true"/>
+  <arg name="lidar_type"                        default="rplidar_s2"/>
 
   <!-- static transform pub arguments -->
   <arg name="load_transforms"                   default="true"/>
@@ -64,127 +64,41 @@
     <arg name="depth_height"                      value="$(arg depth_height)"/>
     <arg name="load_configs"                      value="$(arg load_configs)"/>
     <arg name="use_sim"                           value="$(arg use_sim)"/>
+    <arg name="lidar_type"                        value="$(arg lidar_type)"/>
   </include>
 
   <group if="$(arg use_joy)">
     <!-- interbotix_xslocobot_joy Launch File Arguments -->
-    <arg name="threshold"                         default="0.75"/>
-    <arg name="controller"                        default="ps4"/>
-    <arg if="$(eval robot_model == 'locobot_base')"     name="mode_type" value="base"/>
-    <arg unless="$(eval robot_model == 'locobot_base')" name="mode_type" value="all"/>
-    <arg name="mode_configs" default="$(find interbotix_xslocobot_joy)/config/modes_$(arg mode_type).yaml"/>
-
-    <node
-      pkg="joy"
-      type="joy_node"
-      name="ps3_joy"
-      output="screen"
-      ns="$(arg robot_name)">
-      <param name="dev"                             value="/dev/input/js0"/>
-      <remap from="joy"                             to="commands/joy_raw"/>
-    </node>
-
-    <node
-      pkg="interbotix_xslocobot_joy"
-      type="xslocobot_joy"
-      name="xslocobot_joy"
-      output="screen"
-      ns="$(arg robot_name)">
-      <param name="threshold"                       value="$(arg threshold)"/>
-      <param name="controller"                      value="$(arg controller)"/>
-    </node>
-
-    <node
-      pkg="interbotix_xslocobot_joy"
-      type="xslocobot_robot"
-      name="xslocobot_robot"
-      output="screen"
-      ns="$(arg robot_name)">
-      <param name="robot_model"                     value="$(arg robot_model)"/>
-      <param name="use_base"                        value="$(arg use_base)"/>
-      <param name="base_type"                       value="$(arg base_type)"/>
-    </node>
+    <include file="$(find locobot)/launch/joy.launch"/>
 
     <!-- my custom joy script -->
     <!-- <include file="$(find ps4_joy)/launch/ps4ctrler.launch"/> -->
-
   </group>
 
   <!-- lidar undistortion -->
-  <node name="lidar_undistortion_node" pkg="lidar_undistortion"  type="lidar_undistortion" output="screen">
-      <param name="lidar_topic" value="/locobot/scan"/>
-      <param name="lidar_msg_delay_time" value="10.0"/>
-      <param name="scan_direction_clockwise" value="true"/>
-      <param name="imu_topic" value="/wit/imu"/>
-      <param name="imu_frequency" value="200.0"/>
-      <param name="output_frame_id" value="locobot/laser_frame_link"/>
-      <param name="pub_raw_scan_pointcloud" value="true"/>
-      <param name="pub_laserscan" value="true"/>
-      <param name="laserscan_angle_increment" value="0.008"/>
-      <param name="use_range_filter" value="true"/>
-      <param name="range_filter_min" value="0.2"/>
-      <param name="range_filter_max" value="12.0"/>
-      <param name="use_angle_filter" value="true"/>
-      <param name="angle_filter_min" value="-3.14"/>
-      <param name="angle_filter_max" value="3.14"/>
-      <param name="use_radius_outlier_filter" value="true"/>
-      <param name="radius_outlier_filter_search_radius" value="0.1"/>
-      <param name="radius_outlier_filter_min_neighbors" value="2"/>
-  </node>
+  <include file="$(find locobot)/launch/lidar_undistortion.launch">
+    <arg name="lidar_topic" value="/locobot/scan"/>
+  </include>
 
   <group unless="$(arg pure_run)">
-    <!-- cartographer -->
-    <!-- localization -->
-    <group if="$(arg localization)">
-      <include file="$(find locobot)/launch/carto_localization.launch">
-          <arg name="map_dir" value="$(arg map_dir)" />
-          <arg name="imu_topic"  value="/wit/imu"/>
-          <arg name="scan_topic" value="/lidar_undistortion/scan"/>
-          <arg name="odom_topic" value="/locobot/mobile_base/odom"/>
-      </include>
-    </group>
+    <!-- cartographer localization -->
+    <include if="$(arg localization)" file="$(find locobot)/launch/carto_localization.launch">
+        <arg name="map_dir" value="$(arg map_dir)" />
+        <arg name="imu_topic"  value="/wit/imu"/>
+        <arg name="scan_topic" value="/lidar_undistortion/scan"/>
+        <arg name="odom_topic" value="/locobot/mobile_base/odom"/>
+    </include>
 
-    <!-- mapping -->
-    <group unless="$(arg localization)">
-        <include file="$(find locobot)/launch/carto_slam.launch" />
-          <arg name="imu_topic"  value="/wit/imu"/>
-          <arg name="scan_topic" value="/lidar_undistortion/scan"/>
-          <arg name="odom_topic" value="/locobot/mobile_base/odom"/>
-    </group>
+    <!-- cartographer mapping -->
+    <include unless="$(arg localization)" file="$(find locobot)/launch/carto_slam.launch">
+      <arg name="imu_topic"  value="/wit/imu"/>
+      <arg name="scan_topic" value="/lidar_undistortion/scan"/>
+      <arg name="odom_topic" value="/locobot/mobile_base/odom"/>
+    </include>
 
     <!-- move base -->
-    <arg if="$(eval base_type == 'kobuki')"  name="move_base_cmd_vel_topic" default="mobile_base/commands/velocity"/>
-    <arg if="$(eval base_type == 'create3')" name="move_base_cmd_vel_topic" default="/mobile_base/cmd_vel"/>
-
-    <arg if="$(eval base_type == 'kobuki')"  name="odom_topic" default="mobile_base/odom"/>
-    <arg if="$(eval base_type == 'create3')" name="odom_topic" default="/mobile_base/odom"/>
-
-    <node unless="$(arg use_joy)"
-      pkg="move_base"
-      type="move_base"
-      respawn="false"
-      name="move_base"
-      output="screen"
-      ns="$(arg robot_name)">
-      <rosparam file="$(find locobot)/config/mvbase/local_costmap_all_params.yaml" command="load"/>
-      <rosparam file="$(find locobot)/config/mvbase/global_costmap_all_params.yaml" command="load"/>
-      <rosparam file="$(find locobot)/config/mvbase/common_costmap_params.yaml" command="load" ns="global_costmap"/>
-      <rosparam file="$(find locobot)/config/mvbase/common_costmap_params.yaml" command="load" ns="local_costmap"/>
-      <rosparam file="$(find locobot)/config/mvbase/local_planner_params.yaml"  command="load"/>
-      <rosparam file="$(find locobot)/config/mvbase/global_planner_params.yaml" command="load"/>
-      <rosparam file="$(find locobot)/config/mvbase/move_base_params.yaml"      command="load"/>
-
-      <param name="global_costmap/global_frame"     value="map"/>
-      <param name="global_costmap/robot_base_frame" value="$(arg robot_name)/base_footprint"/>
-      <param name="local_costmap/global_frame"      value="map"/>
-      <param name="local_costmap/robot_base_frame"  value="$(arg robot_name)/base_footprint"/>
-
-      <remap from="cmd_vel"                         to="$(arg move_base_cmd_vel_topic)"/>
-      <remap from="map"                             to="/map"/>
-      <remap from="odom"                            to="$(arg odom_topic)"/>
-    </node>
-
+    <include unless="$(arg use_joy)" file="$(find locobot)/launch/move_base.launch">
+      <arg name="robot_name" value="locobot"/>
+    </include>
   </group>
-
-
 </launch>

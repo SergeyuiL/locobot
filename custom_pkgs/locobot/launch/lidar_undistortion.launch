@@ -1,0 +1,24 @@
+<launch>
+    <arg name="lidar_topic" default="/locobot/scan"/>
+
+    <node name="lidar_undistortion_node" pkg="lidar_undistortion"  type="lidar_undistortion" output="screen">
+      <param name="lidar_topic" value="$(arg lidar_topic)"/>
+      <param name="lidar_msg_delay_time" value="10.0"/>
+      <param name="scan_direction_clockwise" value="true"/>
+      <param name="imu_topic" value="/wit/imu"/>
+      <param name="imu_frequency" value="200.0"/>
+      <param name="output_frame_id" value="locobot/laser_frame_link"/>
+      <param name="pub_raw_scan_pointcloud" value="true"/>
+      <param name="pub_laserscan" value="true"/>
+      <param name="laserscan_angle_increment" value="0.008"/>
+      <param name="use_range_filter" value="true"/>
+      <param name="range_filter_min" value="0.2"/>
+      <param name="range_filter_max" value="12.0"/>
+      <param name="use_angle_filter" value="true"/>
+      <param name="angle_filter_min" value="-3.14"/>
+      <param name="angle_filter_max" value="3.14"/>
+      <param name="use_radius_outlier_filter" value="true"/>
+      <param name="radius_outlier_filter_search_radius" value="0.1"/>
+      <param name="radius_outlier_filter_min_neighbors" value="2"/>
+    </node>
+</launch>

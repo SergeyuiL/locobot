@@ -1,0 +1,36 @@
+<launch>
+    <arg name="threshold"                         default="0.75"/>
+    <arg name="controller"                        default="ps4"/>
+
+    <node
+      pkg="joy"
+      type="joy_node"
+      name="ps3_joy"
+      output="screen"
+      ns="$(arg robot_name)">
+      <param name="dev"                             value="/dev/input/js0"/>
+      <remap from="joy"                             to="commands/joy_raw"/>
+    </node>
+
+    <node
+      pkg="interbotix_xslocobot_joy"
+      type="xslocobot_joy"
+      name="xslocobot_joy"
+      output="screen"
+      ns="$(arg robot_name)">
+      <param name="threshold"                       value="$(arg threshold)"/>
+      <param name="controller"                      value="$(arg controller)"/>
+    </node>
+
+    <node
+      pkg="interbotix_xslocobot_joy"
+      type="xslocobot_robot"
+      name="xslocobot_robot"
+      output="screen"
+      ns="$(arg robot_name)">
+      <param name="robot_model"                     value="$(arg robot_model)"/>
+      <param name="use_base"                        value="$(arg use_base)"/>
+      <param name="base_type"                       value="$(arg base_type)"/>
+    </node>
+
+</launch>
