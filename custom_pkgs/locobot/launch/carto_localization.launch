@@ -1,6 +1,9 @@
 <launch>
     <!-- Cartographer 2D localization -->
     <arg name="map_dir" />
+    <arg name="imu_topic"  default="/wit/imu"/>
+    <arg name="scan_topic" default="/locobot/scan"/>
+    <arg name="odom_topic" default="/locobot/mobile_base/odom"/>
 
     <node name="cartographer_node" pkg="cartographer_ros"
         type="cartographer_node" args="
@@ -8,8 +11,9 @@
             -configuration_basename locobot_localization.lua
             -load_state_filename $(arg map_dir)/map.pbstream"
         output="screen">
-        <remap from="/imu" to="/wit/imu" />
-        <remap from="/scan" to="/locobot/scan" />
+        <remap from="/imu"  to="$(arg imu_topic)" />
+        <remap from="/scan" to="$(arg scan_topic)" />
+        <remap from="/odom" to="$(arg odom_topic)" />
     </node>
 
     <node name="cartographer_occupancy_grid_node" pkg="cartographer_ros"
