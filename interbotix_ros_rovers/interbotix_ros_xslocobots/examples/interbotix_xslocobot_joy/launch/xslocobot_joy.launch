@@ -18,6 +18,9 @@
   <arg unless="$(eval robot_model == 'locobot_base')" name="mode_type" value="all"/>
   <arg name="mode_configs" default="$(find interbotix_xslocobot_joy)/config/modes_$(arg mode_type).yaml"/>
 
+  <!-- IMU -->
+  <include file="$(find wit_ros_imu)/launch/wit_imu.launch"/>
+
   <include if="$(arg launch_driver)" file="$(find interbotix_xslocobot_control)/launch/xslocobot_control.launch">
     <arg name="robot_model"                       value="$(arg robot_model)"/>
     <arg name="robot_name"                        value="$(arg robot_name)"/>

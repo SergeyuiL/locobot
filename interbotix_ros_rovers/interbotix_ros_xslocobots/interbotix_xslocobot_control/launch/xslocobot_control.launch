@@ -136,6 +136,7 @@
     <param name="inverted"            type="bool"   value="false"/>
     <param name="angle_compensate"    type="bool"   value="true"/>
     <param name="scan_frequency"      type="double" value="10.0"/>
+    <param name="scan_mode" value="Boost" />
   </node>
 
   <include if="$(arg use_camera)" file="$(find realsense2_camera)/launch/rs_camera.launch" ns="$(arg robot_name)">

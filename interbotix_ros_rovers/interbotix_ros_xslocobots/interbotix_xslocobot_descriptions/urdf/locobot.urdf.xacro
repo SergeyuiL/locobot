@@ -31,7 +31,7 @@
   <xacro:include filename="$(find interbotix_xslocobot_descriptions)/urdf/pan_and_tilt.urdf.xacro" />
 
   <xacro:include filename="$(find locobot)/urdf/imu.urdf.xacro"/>
-  <xacro:imu robot_name="locobot" imu_link_name="imu_link" imu_parent_link="laser_frame_link"/>
+  <xacro:imu robot_name="locobot" imu_link_name="imu_link" imu_parent_link="base_footprint"/>
 
 
   <link name="$(arg robot_name)/base_footprint"/>
