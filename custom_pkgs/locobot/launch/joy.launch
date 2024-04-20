@@ -1,6 +1,10 @@
 <launch>
     <arg name="threshold"                         default="0.75"/>
     <arg name="controller"                        default="ps4"/>
+    <arg name="robot_name"                        default="locobot"/>
+    <arg name="robot_model"                       default=""/>
+    <arg name="use_base"                          default=""/>
+    <arg name="base_type"                          default=""/>
 
     <node
       pkg="joy"

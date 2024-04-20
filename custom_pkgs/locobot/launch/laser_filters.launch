@@ -1,7 +1,9 @@
 <launch>
+  <arg name="lidar_topic" default="/locobot/scan"/>
 
-
-
-
-
+  <node pkg="laser_filters" type="scan_to_scan_filter_chain"
+      name="laser_filter">
+    <rosparam command="load" file="$(find locobot)/config/laser_filters/laser_config.yaml" />
+    <remap from="scan" to="$(arg lidar_topic)" />
+  </node>
 </launch>

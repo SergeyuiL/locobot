@@ -10,7 +10,7 @@
       <param name="output_frame_id" value="locobot/laser_frame_link"/>
       <param name="pub_raw_scan_pointcloud" value="true"/>
       <param name="pub_laserscan" value="true"/>
-      <param name="laserscan_angle_increment" value="0.008"/>
+      <param name="laserscan_angle_increment" value="0.002"/>
       <param name="use_range_filter" value="true"/>
       <param name="range_filter_min" value="0.2"/>
       <param name="range_filter_max" value="12.0"/>

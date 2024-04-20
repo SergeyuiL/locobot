@@ -19,9 +19,9 @@
     <node name="cartographer_occupancy_grid_node" pkg="cartographer_ros"
         type="cartographer_occupancy_grid_node" args="-resolution 0.01" />
 
-    <node name="cartographer_initial_pose" pkg="cartographer_initial_pose" type="initial_pose_listener" output="screen">
+    <!-- <node name="cartographer_initial_pose" pkg="cartographer_initial_pose" type="initial_pose_listener" output="screen">
         <param name="configuration_directory" value="$(find locobot)/config/carto" />
         <param name="configuration_basename" value="locobot.lua" />
-    </node>
+    </node> -->
 
 </launch>

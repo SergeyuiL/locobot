@@ -6,7 +6,7 @@
   <arg name="use_sim"                           default="false"/>
 
   <arg name="localization"                      default="false"/>
-  <arg name="map_dir"                           default="$(find locobot)/maps/0326"/>
+  <arg name="map_dir"                           default="$(find locobot)/maps/0420"/>
   <arg name="pure_run"                          default="false"/>
   <arg name="use_joy"                           default="false"/>
   <arg name="use_wit_imu"                       default="true"/>
@@ -33,10 +33,6 @@
   <arg name="depth_height"                      default="480"/>
   <arg name="load_configs"                      default="true"/>
   <arg name="lidar_type"                        default="rplidar_s2"/>
-
-  <!-- static transform pub arguments -->
-  <arg name="load_transforms"                   default="true"/>
-  <arg name="transform_filepath"                default="$(find interbotix_xslocobot_perception)/config/static_transforms.yaml"/>
 
   <!-- IMU -->
   <include if="$(arg use_wit_imu)" file="$(find wit_ros_imu)/launch/wit_imu.launch"/>
@@ -69,15 +65,25 @@
 
   <group if="$(arg use_joy)">
     <!-- interbotix_xslocobot_joy Launch File Arguments -->
-    <include file="$(find locobot)/launch/joy.launch"/>
+    <include file="$(find locobot)/launch/joy.launch">
+      <arg name="robot_name"  value="$(arg robot_name)"/>
+      <arg name="robot_model" value="$(arg robot_model)"/>
+      <arg name="use_base"    value="$(arg use_base)"/>
+      <arg name="base_type"   value="$(arg base_type)"/>
+    </include>
 
     <!-- my custom joy script -->
     <!-- <include file="$(find ps4_joy)/launch/ps4ctrler.launch"/> -->
   </group>
 
+  <!-- laser filters -->
+  <include file="$(find locobot)/launch/laser_filters.launch">
+    <arg name="lidar_topic" value="/locobot/scan"/>
+  </include>
+
   <!-- lidar undistortion -->
   <include file="$(find locobot)/launch/lidar_undistortion.launch">
-    <arg name="lidar_topic" value="/locobot/scan"/>
+    <arg name="lidar_topic" value="/scan_filtered"/>
   </include>
 
   <group unless="$(arg pure_run)">
