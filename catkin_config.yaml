@@ -1,0 +1,40 @@
+authors: []
+blacklist:
+- yocs_ar_marker_tracking
+- yocs_ar_pair_approach
+- yocs_ar_pair_tracking
+- yocs_diff_drive_pose_controller
+- yocs_joyop
+- yocs_keyop
+- yocs_localization_manager
+- yocs_math_toolkit
+- yocs_navi_toolkit
+- yocs_navigator
+- yocs_rapps
+- yocs_safety_controller
+- yocs_virtual_sensor
+- yocs_waypoint_provider
+- yocs_waypoints_navi
+- yujin_ocs
+build_space: build
+catkin_make_args: []
+cmake_args:
+- -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+- -DCMAKE_BUILD_TYPE=RelWithDebInfo
+devel_layout: linked
+devel_space: devel
+extend_path: /opt/ros/noetic
+extends: null
+install: false
+install_space: install
+isolate_install: false
+jobs_args: []
+licenses:
+- TODO
+log_space: logs
+maintainers: []
+make_args: []
+source_space: src
+use_env_cache: false
+use_internal_make_jobserver: true
+whitelist: []
