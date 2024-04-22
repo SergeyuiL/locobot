@@ -14,5 +14,5 @@ laser_layer:
     inf_is_valid: true
 
 inflation_layer:
-  cost_scaling_factor: 2.5
+  cost_scaling_factor: 0.8
   inflation_radius: 0.3

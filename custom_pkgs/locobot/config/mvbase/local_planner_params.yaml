@@ -1,3 +1,33 @@
+TebLocalPlannerROS:
+  max_vel_x: 0.5
+  min_vel_x: 0.1
+  max_vel_theta: 1.0
+  min_in_place_vel_theta: 0.4
+
+  acc_lim_x: 0.5
+  acc_lim_theta: 3.2
+
+  holonomic_robot: false  # 非全向机器人
+
+  xy_goal_tolerance: 0.2  # XY轴的目标容差
+  yaw_goal_tolerance: 0.1  # 航向的目标容差
+
+  # Optimization
+  no_inner_iterations: 5  # 内部优化迭代次数
+  no_outer_iterations: 4  # 外部优化迭代次数
+  optimization_activate: true  # 启用优化
+  optimization_verbose: false  # 优化过程是否输出调试信息
+
+  # 障碍物相关参数
+  include_costmap_obstacles: true  # 是否包含代价地图障碍物
+  costmap_obstacles_behind_robot_dist: 1.0  # 考虑后方障碍物的距离
+  obstacle_poses_affected: 30  # 考虑的障碍物位置数量
+
+  # 其他重要参数
+  global_plan_overwrite_orientation: true  # 是否重写全局规划的方向
+  allow_init_with_backwards_motion: false  # 是否允许向后初始化
+
+
 TrajectoryPlannerROS:
   acc_lim_x: 0.5
   acc_lim_y: 0
@@ -13,10 +43,13 @@ TrajectoryPlannerROS:
 
   holonomic_robot: false
 
-  vx_samples: 3
+  vx_samples: 10
+  vth_samples: 20
   meter_scoring: true
 
   path_distance_bias: 0.75
   goal_distance_bias: 1.0
-  occdist_scale: 0.01
+  occdist_scale: 1
   dwa: true
+
+

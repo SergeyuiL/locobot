@@ -3,6 +3,7 @@ global_costmap:
   robot_base_frame: locobot/imu_link
   update_frequency: 1.0
   publish_frequency: 0.5
+  always_send_full_costmap: true
   plugins:
   - {name: static_layer, type: "costmap_2d::StaticLayer"}
   - {name: laser_layer, type: "costmap_2d::ObstacleLayer"}

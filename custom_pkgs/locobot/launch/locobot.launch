@@ -6,10 +6,12 @@
   <arg name="use_sim"                           default="false"/>
 
   <arg name="localization"                      default="false"/>
-  <arg name="map_dir"                           default="$(find locobot)/maps/0420"/>
+  <arg name="map_dir"                           default="$(find locobot)/maps/0422"/>
   <arg name="pure_run"                          default="false"/>
   <arg name="use_joy"                           default="false"/>
   <arg name="use_wit_imu"                       default="true"/>
+
+  <arg name="use_plane_detection"               default="false"/>
 
   <!-- interbotix_xslocobot_control Launch File Arguments -->
   <arg name="robot_name"                        default="locobot"/>
@@ -33,6 +35,9 @@
 
   <!-- IMU -->
   <include if="$(arg use_wit_imu)" file="$(find wit_ros_imu)/launch/wit_imu.launch"/>
+
+  <!-- rplidar -->
+  <include file="$(find locobot)/launch/rplidar.launch"/>
 
   <!-- locobot basic -->
   <include file="$(find interbotix_xslocobot_control)/launch/xslocobot_control.launch">
@@ -84,6 +89,9 @@
   </include>
 
   <group unless="$(arg pure_run)">
+    <!-- rgbd plane detection -->
+    <node if="$(arg use_plane_detection)" name="rgbd_plane_detection_node" pkg="rgbd_plane_detection"  type="rgbd_plane_detection" output="screen"/>
+
     <!-- cartographer localization -->
     <include if="$(arg localization)" file="$(find locobot)/launch/carto_localization.launch">
         <arg name="map_dir" value="$(arg map_dir)" />
