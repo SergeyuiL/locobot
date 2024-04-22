@@ -1,11 +1,16 @@
 TebLocalPlannerROS:
   max_vel_x: 0.5
+  max_vel_x_backwards: 0.5
   min_vel_x: 0.1
   max_vel_theta: 1.0
   min_in_place_vel_theta: 0.4
 
   acc_lim_x: 0.5
   acc_lim_theta: 3.2
+
+  footprint_model/type: circular
+  footprint_model/radius: 0.2
+
 
   holonomic_robot: false  # 非全向机器人
 
@@ -19,6 +24,7 @@ TebLocalPlannerROS:
   optimization_verbose: false  # 优化过程是否输出调试信息
 
   # 障碍物相关参数
+  min_obstacle_dist: 0.1
   include_costmap_obstacles: true  # 是否包含代价地图障碍物
   costmap_obstacles_behind_robot_dist: 1.0  # 考虑后方障碍物的距离
   obstacle_poses_affected: 30  # 考虑的障碍物位置数量
