@@ -102,9 +102,44 @@
       <arg name="odom_topic" value="/locobot/mobile_base/odom"/>
     </include>
 
-    <!-- move base -->
-    <include unless="$(arg use_joy)" file="$(find locobot)/launch/move_base.launch">
-      <arg name="robot_name" value="locobot"/>
-    </include>
+    <!-- move_base & moveit -->
+    <group unless="$(arg use_joy)">
+
+      <include file="$(find locobot)/launch/move_base.launch">
+        <arg name="robot_name" value="locobot"/>
+      </include>
+
+      <rosparam file="$(find interbotix_xslocobot_ros_control)/config/6dof_controllers.yaml" command="load" ns="$(arg robot_name)"/>
+      <rosparam file="$(find interbotix_xslocobot_ros_control)/config/hardware.yaml" command="load" ns="$(arg robot_name)"/>
+
+      <node
+        name="controller_spawner"
+        pkg="controller_manager"
+        type="controller_manager"
+        respawn="false"
+        output="screen"
+        ns="$(arg robot_name)"
+        args="spawn arm_controller gripper_controller"/>
+
+      <node
+        name="xs_hardware_interface"
+        pkg="interbotix_xs_ros_control"
+        type="xs_hardware_interface"
+        output="screen"
+        ns="$(arg robot_name)">
+      </node>
+
+      <include file="$(find interbotix_xslocobot_moveit)/launch/move_group.launch" ns="$(arg robot_name)">
+        <arg name="robot_model"                       value="$(arg robot_model)"/>
+        <arg name="robot_name"                        value="$(arg robot_name)"/>
+        <arg name="show_lidar"                        value="$(arg show_lidar)"/>
+        <arg name="external_srdf_loc"                 value=""/>
+        <arg name="dof"                               value="6"/>
+        <arg name="use_camera"                        value="$(arg use_camera)"/>
+        <arg name="fake_execution"                    value="false"/>
+        <arg name="publish_monitored_planning_scene"  value="true" />
+      </include>
+
+    </group>
   </group>
 </launch>
