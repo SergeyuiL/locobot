@@ -1,0 +1,6 @@
+image: /home/locobot/locobot/src/custom_pkgs/locobot/maps/719_0906/map.pgm
+resolution: 0.05
+origin: [-7.15, -3.38962, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

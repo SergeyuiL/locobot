@@ -5,8 +5,8 @@
   <arg name="base_type"                         default="$(optenv INTERBOTIX_XSLOCOBOT_BASE_TYPE kobuki)"/>
   <arg name="use_sim"                           default="false"/>
 
-  <arg name="localization"                      default="false"/>
-  <arg name="map_dir"                           default="$(find locobot)/maps/0422"/>
+  <arg name="localization"                      default="true"/>
+  <arg name="map_dir"                           default="$(find locobot)/maps/719_0906"/>
   <arg name="pure_run"                          default="false"/>
   <arg name="use_joy"                           default="false"/>
   <arg name="use_wit_imu"                       default="true"/>
@@ -25,10 +25,10 @@
   <arg name="use_camera"                        default="true"/>
   <arg name="filters"                           default="pointcloud"/>
   <arg name="align_depth"                       default="true"/>
-  <arg name="color_fps"                         default="30"/>
+  <arg name="color_fps"                         default="60"/>
   <arg name="color_width"                       default="640"/>
   <arg name="color_height"                      default="480"/>
-  <arg name="depth_fps"                         default="30"/>
+  <arg name="depth_fps"                         default="60"/>
   <arg name="depth_width"                       default="640"/>
   <arg name="depth_height"                      default="480"/>
   <arg name="load_configs"                      default="true"/>
@@ -144,7 +144,6 @@
         <arg name="fake_execution"                    value="false"/>
         <arg name="publish_monitored_planning_scene"  value="true" />
       </include>
-
     </group>
   </group>
 </launch>
