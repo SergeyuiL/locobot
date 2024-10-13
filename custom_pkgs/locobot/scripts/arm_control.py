@@ -62,7 +62,7 @@ def initialize_moveit():
 
 class LocobotArm():
 
-    joint_names = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
+    jnts_name = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
 
     def __init__(self) -> None:
 
@@ -72,18 +72,22 @@ class LocobotArm():
         self.robot, self.scene, self.arm_group = initialize_moveit()
         # initialize_motor_pids()
 
+        self.arm_path_pub = rospy.Publisher("/locobot/arm/end_path", PoseArray, queue_size=5)
 
-        self.arm_waypoints_vis_pub = rospy.Publisher("/locobot/arm/end_path", PoseArray, queue_size=5)
-        self._current_joint_state = rospy.wait_for_message("/locobot/joint_states", JointState)
-        self._joint_state_sub = rospy.Subscriber("/locobot/joint_states", JointState, self._on_joint_state)
+        self.jnt_stats = rospy.wait_for_message("/locobot/joint_states", JointState)   # current joint states
+        self.jnt_stats_sub = rospy.Subscriber("/locobot/joint_states", JointState, self.on_jnt_stats)
         self.tf_buffer.lookup_transform("locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time(), rospy.Duration(5.0))
 
-        self.arm_control_server = actionlib.SimpleActionServer("/locobot/arm_control", MoveBaseAction, self.exec_cb, auto_start=False)
-        self.arm_control_server.start()
+        ## reach goal pose (with any path)
+        self.ctl_server = actionlib.SimpleActionServer("/locobot/arm_control", MoveBaseAction, self.exec_cb, auto_start=False)
+        self.ctl_server.start()
         
-        self.cartesian_arm_control_server = actionlib.SimpleActionServer("/locobot/arm_control_cartesian", MoveBaseAction, self.exec_cb, auto_start=False)
-        self.cartesian_arm_control_server.start()
-        self.arm_sleep_server = rospy.Service("/locobot/arm_sleep", SetBool, self.sleep_cb)
+        ## reach goal pose with cartesian path
+        self.cctl_server = actionlib.SimpleActionServer("/locobot/arm_control_cartesian", MoveBaseAction, self.exec_cartesian_cb, auto_start=False)
+        self.cctl_server.start()
+
+        ## for quick test
+        rospy.Service("/locobot/arm_sleep", SetBool, self.sleep_cb)
 
     @property
     def end_pose(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -102,52 +106,52 @@ class LocobotArm():
     @property
     def joint_values(self) -> np.ndarray:
         return np.array([
-            self._current_joint_state.position[self._current_joint_state.name.index(joint_name)]
-            for joint_name in self.joint_names
+            self._jnt_stats.position[self._jnt_stats.name.index(joint_name)]
+            for joint_name in self.jnts_name
         ])
     
     def exec_cb(self, goal: MoveBaseGoal):
         target_position, target_oritation = _pose_to_tuple(goal.target_pose.pose)
         success = self.move_end_to_pose(position=target_position, orientation=target_oritation, nonblocking=False)
-        if self.arm_control_server.preempt_request:
+        if self.ctl_server.preempt_request:
             rospy.loginfo("Cancel arm control ...")
             self.arm_group.stop()
             self.arm_group.clear_pose_targets()
             res = PoseStamped()
             res.pose = _tuple_to_pose(self.end_pose)
-            self.arm_control_server.set_preempted(result=res)
+            self.ctl_server.set_preempted(result=res)
         else:
             if success:
                 res = PoseStamped()
                 res.pose = _tuple_to_pose(self.end_pose)
-                self.arm_control_server.set_succeeded(result=res)
+                self.ctl_server.set_succeeded(result=res)
             else:
                 res = PoseStamped()
                 res.pose = _tuple_to_pose(self.end_pose)
-                self.arm_control_server.set_aborted(result=res)
+                self.ctl_server.set_aborted(result=res)
     
     def exec_cartesian_cb(self, goal: MoveBaseGoal):
         target_position, target_oritation = _pose_to_tuple(goal.target_pose.pose)
         success = self.move_to_pose_with_cartesian(position=target_position, orientation=target_oritation)
-        if self.cartesian_arm_control_server.preempt_request:
+        if self.cctl_server.preempt_request:
             rospy.loginfo("Cancel arm control ...")
             self.arm_group.stop()
             self.arm_group.clear_pose_targets()
             res = PoseStamped()
             res.pose = _tuple_to_pose(self.end_pose)
-            self.cartesian_arm_control_server.set_preempted(result=res)
+            self.cctl_server.set_preempted(result=res)
         else:
             if success:
                 res = PoseStamped()
                 res.pose = _tuple_to_pose(self.end_pose)
-                self.cartesian_arm_control_server.set_succeeded(result=res)
+                self.cctl_server.set_succeeded(result=res)
             else:
                 res = PoseStamped()
                 res.pose = _tuple_to_pose(self.end_pose)
-                self.cartesian_arm_control_server.set_aborted(result=res)
+                self.cctl_server.set_aborted(result=res)
 
-    def _on_joint_state(self, joint_state: JointState):
-        self._current_joint_state = joint_state
+    def on_jnt_stats(self, joint_state: JointState):
+        self._jnt_stats = joint_state
     
     def move_to_pose_with_cartesian(self, position, rotation, min_fraction=0.95):
         waypoint_poses = []
@@ -208,13 +212,14 @@ class LocobotArm():
             return True
 
     def vis_pose_array(self, poses):
-        waypoint_poses = [_tuple_to_pose(pose) for pose in poses]
-        self.arm_waypoints_vis_pub.publish(PoseArray(
+        ## waypoints
+        wps = [_tuple_to_pose(pose) for pose in poses]
+        self.arm_path_pub.publish(PoseArray(
             header=rospy.Header(
                 stamp=rospy.Time.now(),
                 frame_id="base_link",
             ),
-            poses=waypoint_poses,
+            poses=wps,
         ))
 
     def move_cartesian_paths(
@@ -230,7 +235,7 @@ class LocobotArm():
         first_pose_joints: List[float]
         for waypoints in waypoints_:
             waypoint_poses = [_tuple_to_pose(pose) for pose in waypoints]
-            self.arm_waypoints_vis_pub.publish(PoseArray(
+            self.arm_path_pub.publish(PoseArray(
                 header=rospy.Header(
                     stamp=rospy.Time.now(),
                     frame_id="base_link",
@@ -246,7 +251,7 @@ class LocobotArm():
                     continue
                 first_pose_joints = first_pose_trajectory.joint_trajectory.points[-1].positions
                 start_state = RobotState()
-                start_state.joint_state.name = self._current_joint_state.name
+                start_state.joint_state.name = self._jnt_stats.name
                 start_state.joint_state.position = first_pose_joints
                 self.arm_group.set_start_state(start_state)
             else:
@@ -324,7 +329,7 @@ class LocobotArm():
 if __name__ == "__main__":
     rospy.init_node("locobot_arm_moveit_test")
     arm = LocobotArm()
-    # p1 = (np.array([0.5, -0.14, 0.15]), np.array([0.0, 0.0, 0.0, 1.0]))
-    # arm.move_end_to_pose(*p1)
+    p1 = (np.array([0.5, -0.14, 0.15]), np.array([0.0, 0.0, 0.0, 1.0]))
+    arm.move_end_to_pose(*p1)
     arm.sleep()
     rospy.spin()

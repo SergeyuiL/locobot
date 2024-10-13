@@ -63,8 +63,10 @@ class LocobotArm():
         self.tf_listener = TransformListener(self.tf_buffer)
 
         self.robot, self.scene, self.arm_group = initialize_moveit()
+        self.robot: RobotCommander
+        self.scene: PlanningSceneInterface
+        self.arm_group: MoveGroupCommander
         # initialize_motor_pids()
-
 
         self.arm_waypoints_vis_pub = rospy.Publisher("/locobot/arm/end_path", PoseArray, queue_size=5)
         self._current_joint_state = rospy.wait_for_message("/locobot/joint_states", JointState)
@@ -108,9 +110,11 @@ class LocobotArm():
             target_poses: List[Tuple[np.ndarray, np.ndarray]],
             nonblocking=False
     ) -> bool:
+        """ randomly choose one from `target_poses` and move to it """
         self.arm_group.stop()
         self.arm_group.clear_pose_targets()
         self.arm_group.set_start_state_to_current_state()
+        ## note that set_pose_targets() is not "planning a trajectory from given poses", see https://robotics.stackexchange.com/questions/99514/moveit-set-pose-targets-doesnt-plan-a-trajectory-through-a-list-of-waypoints.
         self.arm_group.set_pose_targets([_tuple_to_pose(pose) for pose in target_poses])
         print(f"Moving arm to {target_poses}")
         start_time = rospy.get_time()
@@ -245,5 +249,5 @@ if __name__ == "__main__":
     rospy.init_node("locobot_arm_moveit_test")
     arm = LocobotArm()
     p1 = (np.array([0.5, -0.0, 0.3]), np.array([0.0, 0.0, 0.0, 1.0]))
-    # arm.move_end_to_pose(*p1)
+    arm.move_end_to_pose(*p1)
     arm.sleep()
