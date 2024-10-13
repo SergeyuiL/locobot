@@ -19,6 +19,11 @@
   <!-- Dependencies can be catkin packages or system dependencies -->
   <buildtool_depend>catkin</buildtool_depend>
 
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>message_generation</depend>
+  <depend>message_runtime</depend>
+
   <depend>interbotix_xs_sdk</depend>
   <depend>interbotix_xs_modules</depend>
   <depend>interbotix_xslocobot_descriptions</depend>

@@ -7,6 +7,7 @@ from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
 
 
 class LocobotCamera:
+    """ provide services to adjust the camera pitch and yaw (currently scanning, maybe add angle control later) """
     def __init__(self) -> None:
         dxl = InterbotixRobotXSCore(
                                     robot_model="wx250s",

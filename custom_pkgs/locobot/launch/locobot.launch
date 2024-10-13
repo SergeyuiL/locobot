@@ -128,7 +128,7 @@
         ns="$(arg robot_name)"
         args="spawn arm_controller gripper_controller"/>
 
-      <node name="all_control" pkg="locobot" type="all_control.py" output="screen" ns="$(arg robot_name)"/>
+      <node name="all_control" pkg="locobot" type="all_control.py" output="screen"/>
 
       <node
         name="xs_hardware_interface"

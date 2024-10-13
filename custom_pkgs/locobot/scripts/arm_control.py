@@ -14,12 +14,10 @@ from tf2_ros import Buffer, TransformListener
 import moveit_commander
 from moveit_commander import PlanningSceneInterface, RobotCommander, MoveGroupCommander
 import sys
-from std_msgs.msg import String
 
-from move_base_msgs.msg import MoveBaseAction, MoveBaseResult, MoveBaseFeedback, MoveBaseGoal
-from geometry_msgs.msg import PoseStamped, Pose, Twist
-import actionlib
+from geometry_msgs.msg import PoseStamped, Pose
 from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
+from locobot.srv import setgoal, setgoalRequest, setgoalResponse
 
 def _tuple_to_pose(pose_tuple: Tuple[np.ndarray, np.ndarray]) -> Pose:
     return Pose(
@@ -61,7 +59,7 @@ def initialize_moveit():
     return robot, scene, arm_group
 
 class LocobotArm():
-
+    """ provide services to control the locobot arm (plan, plan cartesian and sleep) """
     jnts_name = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
 
     def __init__(self) -> None:
@@ -79,12 +77,10 @@ class LocobotArm():
         self.tf_buffer.lookup_transform("locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time(), rospy.Duration(5.0))
 
         ## reach goal pose (with any path)
-        self.ctl_server = actionlib.SimpleActionServer("/locobot/arm_control", MoveBaseAction, self.exec_cb, auto_start=False)
-        self.ctl_server.start()
+        rospy.Service("/locobot/arm_control", setgoal, self.reach)
         
         ## reach goal pose with cartesian path
-        self.cctl_server = actionlib.SimpleActionServer("/locobot/arm_control_cartesian", MoveBaseAction, self.exec_cartesian_cb, auto_start=False)
-        self.cctl_server.start()
+        rospy.Service("locobot/arm_control_cartesian", setgoal, self.reach_c)
 
         ## for quick test
         rospy.Service("/locobot/arm_sleep", SetBool, self.sleep_cb)
@@ -110,45 +106,23 @@ class LocobotArm():
             for joint_name in self.jnts_name
         ])
     
-    def exec_cb(self, goal: MoveBaseGoal):
-        target_position, target_oritation = _pose_to_tuple(goal.target_pose.pose)
+    def reach(self, req:setgoalRequest):
+        """ reach goal popse with any path """
+        target_position, target_oritation = _pose_to_tuple(req.goal)
         success = self.move_end_to_pose(position=target_position, orientation=target_oritation, nonblocking=False)
-        if self.ctl_server.preempt_request:
-            rospy.loginfo("Cancel arm control ...")
-            self.arm_group.stop()
-            self.arm_group.clear_pose_targets()
-            res = PoseStamped()
-            res.pose = _tuple_to_pose(self.end_pose)
-            self.ctl_server.set_preempted(result=res)
-        else:
-            if success:
-                res = PoseStamped()
-                res.pose = _tuple_to_pose(self.end_pose)
-                self.ctl_server.set_succeeded(result=res)
-            else:
-                res = PoseStamped()
-                res.pose = _tuple_to_pose(self.end_pose)
-                self.ctl_server.set_aborted(result=res)
+        resp = setgoalResponse()
+        resp.res = success
+        resp.response = "success" if success else "failed"
+        return resp
     
-    def exec_cartesian_cb(self, goal: MoveBaseGoal):
-        target_position, target_oritation = _pose_to_tuple(goal.target_pose.pose)
+    def reach_c(self, req:setgoalResponse):
+        """ reach goal pose with cartesian path """
+        target_position, target_oritation = _pose_to_tuple(req.goal)
         success = self.move_to_pose_with_cartesian(position=target_position, orientation=target_oritation)
-        if self.cctl_server.preempt_request:
-            rospy.loginfo("Cancel arm control ...")
-            self.arm_group.stop()
-            self.arm_group.clear_pose_targets()
-            res = PoseStamped()
-            res.pose = _tuple_to_pose(self.end_pose)
-            self.cctl_server.set_preempted(result=res)
-        else:
-            if success:
-                res = PoseStamped()
-                res.pose = _tuple_to_pose(self.end_pose)
-                self.cctl_server.set_succeeded(result=res)
-            else:
-                res = PoseStamped()
-                res.pose = _tuple_to_pose(self.end_pose)
-                self.cctl_server.set_aborted(result=res)
+        resp = setgoalResponse()
+        resp.res = success
+        resp.response = "success" if success else "failed"
+        return resp
 
     def on_jnt_stats(self, joint_state: JointState):
         self._jnt_stats = joint_state
@@ -322,7 +296,7 @@ class LocobotArm():
             self.sleep()
             return SetBoolResponse(True, "locobot arm sleeped!")
         else:
-            return SetBoolRequest(False, "Nothing todo.")
+            return SetBoolResponse(False, "Nothing to do.")
     def sleep(self):
         self.move_joints(np.array([0.0, -1.1, 1.55, 0.0, 0.5, 0.0]),nonblocking=True)
 

@@ -72,6 +72,7 @@ def initialize_motor_pids():
     set_reg("wrist_rotate", "Profile_Acceleration", 6)
 
 class Gripper:
+    """ publish gripper state (close or not) and provide service to control gripper """
     def __init__(self):
         print("-------------init moto pids---------------")
         initialize_motor_pids()

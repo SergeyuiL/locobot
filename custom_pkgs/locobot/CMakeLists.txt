@@ -26,6 +26,20 @@ endif()
 
 find_package(catkin REQUIRED COMPONENTS
   ${ROS_DEPS}
+  geometry_msgs
+  std_msgs
+  message_generation
 )
 
-catkin_package(CATKIN_DEPENDS ${ROS_DEPS})
+add_service_files(
+  FILES
+  setgoal.srv
+)
+
+generate_messages(
+  DEPENDENCIES
+  geometry_msgs
+  std_msgs
+)
+
+catkin_package(CATKIN_DEPENDS ${ROS_DEPS} geometry_msgs std_msgs message_runtime)
