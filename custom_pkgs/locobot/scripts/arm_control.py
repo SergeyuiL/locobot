@@ -78,7 +78,9 @@ class LocobotArm():
 
         self.arm_control_server = actionlib.SimpleActionServer("/locobot/arm_control", MoveBaseAction, self.exec_cb, auto_start=False)
         self.arm_control_server.start()
-
+        
+        self.cartesian_arm_control_server = actionlib.SimpleActionServer("/locobot/arm_control_cartesian", MoveBaseAction, self.exec_cb, auto_start=False)
+        self.cartesian_arm_control_server.start()
         self.arm_sleep_server = rospy.Service("/locobot/arm_sleep", SetBool, self.sleep_cb)
 
     @property
@@ -121,9 +123,48 @@ class LocobotArm():
                 res = PoseStamped()
                 res.pose = _tuple_to_pose(self.end_pose)
                 self.arm_control_server.set_aborted(result=res)
+    
+    def exec_cartesian_cb(self, goal: MoveBaseGoal):
+        target_position, target_oritation = _pose_to_tuple(goal.target_pose.pose)
+        success = self.move_to_pose_with_cartesian(position=target_position, orientation=target_oritation)
+        if self.cartesian_arm_control_server.preempt_request:
+            rospy.loginfo("Cancel arm control ...")
+            self.arm_group.stop()
+            self.arm_group.clear_pose_targets()
+            res = PoseStamped()
+            res.pose = _tuple_to_pose(self.end_pose)
+            self.cartesian_arm_control_server.set_preempted(result=res)
+        else:
+            if success:
+                res = PoseStamped()
+                res.pose = _tuple_to_pose(self.end_pose)
+                self.cartesian_arm_control_server.set_succeeded(result=res)
+            else:
+                res = PoseStamped()
+                res.pose = _tuple_to_pose(self.end_pose)
+                self.cartesian_arm_control_server.set_aborted(result=res)
 
     def _on_joint_state(self, joint_state: JointState):
         self._current_joint_state = joint_state
+    
+    def move_to_pose_with_cartesian(self, position, rotation, min_fraction=0.95):
+        waypoint_poses = []
+        waypoint_poses.append(_tuple_to_pose(self.end_pose))
+        waypoint_poses.append((position, rotation))
+        path, fraction = self.arm_group.compute_cartesian_path(
+            waypoints=waypoint_poses,
+            eef_step=0.01,
+            jump_threshold=100.0,
+        )
+        print(f"Planned cartesian path with {len(path.joint_trajectory.points)} poses, fraction {fraction}")
+        if fraction < min_fraction:
+            print(f"Failed to plan cartesian path! The fraction {fraction} is below {min_fraction}.")
+            return False
+        if not self.arm_group.execute(path, wait=True):
+            print("Failed to move arm along path!")
+            return False
+        print("Arm reached target!")
+        return True
 
     def move_end_to_pose(
             self,
@@ -281,7 +322,7 @@ class LocobotArm():
 if __name__ == "__main__":
     rospy.init_node("locobot_arm_moveit_test")
     arm = LocobotArm()
-    p1 = (np.array([0.5, -0.14, 0.15]), np.array([0.0, 0.0, 0.0, 1.0]))
-    arm.move_end_to_pose(*p1)
+    # p1 = (np.array([0.5, -0.14, 0.15]), np.array([0.0, 0.0, 0.0, 1.0]))
+    # arm.move_end_to_pose(*p1)
     arm.sleep()
     rospy.spin()

@@ -1,3 +1,6 @@
 hr_recorder/7190408/
 maps/
 __pycache__/
+.vscode/
+.gitignore
+*.bag

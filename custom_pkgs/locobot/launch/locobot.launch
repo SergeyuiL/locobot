@@ -6,7 +6,7 @@
   <arg name="use_sim"                           default="false"/>
 
   <arg name="localization"                      default="true"/>
-  <arg name="map_dir"                           default="$(find locobot)/maps/719_0906"/>
+  <arg name="map_dir"                           default="$(find locobot)/maps/719_1010"/>
   <arg name="pure_run"                          default="false"/>
   <arg name="use_joy"                           default="false"/>
   <arg name="use_wit_imu"                       default="true"/>
@@ -65,6 +65,9 @@
     <arg name="use_sim"                           value="$(arg use_sim)"/>
   </include>
 
+  <!-- D455 camera_info -->
+  <!-- <node name="camera_info_publisher" pkg="locobot" type="camera_info_publisher.py" output="screen"/> -->
+
   <group if="$(arg use_joy)">
     <!-- interbotix_xslocobot_joy Launch File Arguments -->
     <include file="$(find locobot)/launch/joy.launch">
@@ -91,6 +94,8 @@
   <group unless="$(arg pure_run)">
     <!-- rgbd plane detection -->
     <node if="$(arg use_plane_detection)" name="rgbd_plane_detection_node" pkg="rgbd_plane_detection"  type="rgbd_plane_detection" output="screen"/>
+
+    <!-- <node name="my_node" pkg="apriltag" type="apriltag_demo" output="screen"/> -->
 
     <!-- cartographer localization -->
     <include if="$(arg localization)" file="$(find locobot)/launch/carto_localization.launch">
