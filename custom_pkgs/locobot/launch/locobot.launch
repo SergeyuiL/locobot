@@ -76,9 +76,6 @@
       <arg name="use_base"    value="$(arg use_base)"/>
       <arg name="base_type"   value="$(arg base_type)"/>
     </include>
-
-    <!-- my custom joy script -->
-    <!-- <include file="$(find ps4_joy)/launch/ps4ctrler.launch"/> -->
   </group>
 
   <!-- laser filters -->
@@ -135,7 +132,7 @@
         name="xs_hardware_interface"
         pkg="interbotix_xs_ros_control"
         type="xs_hardware_interface"
-        output="screen"
+      
         ns="$(arg robot_name)">
       </node>
 

@@ -1,9 +1,12 @@
+#!/usr/bin/env python3
+
 import rospy
 from interbotix_xs_modules.core import InterbotixRobotXSCore
 from interbotix_xs_modules.turret import InterbotixTurretXSInterface
 from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
 
-class LocoboCamera:
+
+class LocobotCamera:
     def __init__(self) -> None:
         dxl = InterbotixRobotXSCore(
                                     robot_model="wx250s",
@@ -54,7 +57,7 @@ class LocoboCamera:
 
 if __name__ == "__main__":
     rospy.init_node("test_camera_control")
-    camera = LocoboCamera()
+    camera = LocobotCamera()
     camera.reset_camera()
     camera.pitch_control(0.4)
     camera.pitch_control(-0.25)

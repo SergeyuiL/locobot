@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import sys
 import rospy
 import moveit_commander
@@ -121,10 +123,10 @@ class Gripper:
         state = self.state
         self.gripper_state_pub.publish(state)
 
-rospy.init_node("gripper_controller")
-gripper = Gripper()
-rate = rospy.Rate(10.0)
-while not rospy.is_shutdown():
-    gripper.publish_state()
-    rate.sleep()
-rospy.spin()
+if __name__ == "__main__":
+    rospy.init_node("gripper_controller")
+    gripper = Gripper()
+    rate = rospy.Rate(10.0)
+    while not rospy.is_shutdown():
+        gripper.publish_state()
+        rate.sleep()
