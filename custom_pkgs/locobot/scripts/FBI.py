@@ -9,7 +9,7 @@ import tf, tf2_ros
 import rospy
 from cv_bridge import CvBridge
 
-from perception_service.srv import setgoal, setgoalRequest, setgoalResponse
+from locobot.srv import setgoal, setgoalRequest, setgoalResponse
 from perception_service.srv import Sam2Gpt4Infer, Sam2Gpt4InferRequest, Sam2Gpt4InferResponse
 from perception_service.srv import GraspInfer, GraspInferRequest, GraspInferResponse
 
@@ -78,7 +78,7 @@ class FBI:
         self.coord_map = "map"
         self.coord_arm_base = "locobot/base_footprint"
         # self.coord_grasp = "locobot/grasp_goal"
-        self.coord_cam = "locobot/camera_aligned_depth_to_color_frame" ## same with "locobot/camera_color_frame"
+        self.coord_cam = "locobot/camera_depth_link" ## same with "locobot/camera_color_frame"
         ## TODO: look up the coordinate of gripper in rviz
         # self.coord_gripper = "locobot/"
 
@@ -91,63 +91,40 @@ class FBI:
         ## subscribe image
         rospy.Subscriber('/locobot/camera/color/image_raw', Image, self.on_rec_img)
         rospy.Subscriber('/locobot/camera/aligned_depth_to_color/image_raw', Image, self.on_rec_depth)
+        self.pub_cld = rospy.Publisher('/locobot/point_cloud', PointCloud2, queue_size=1)
 
         rospy.wait_for_message('/locobot/camera/color/image_raw', CameraInfo)
         rospy.wait_for_message('/locobot/camera/aligned_depth_to_color/image_raw', CameraInfo)
 
-        mask = self.get_mask("second layer handle")
+        mask = self.get_mask("handle")
         cv2.imwrite("mask.png", mask.astype(np.uint8)*255)
         print("mask got")
         self.grasp(mask)
     
-    def grasp(self, mask=None):
+    def grasp(self, mask):
         """ grasp handle """
         rgb = deepcopy(self.img_rgb)
         depth = deepcopy(self.img_dep)
-        if mask is not None:
-            mask = np.ones_like(depth, dtype=np.uint8)
+        cld = deepcopy(self.cld)
 
         print("sending grasp infer request")
-        msg = GraspInferRequest()
-        ## mask
-        msg.mask = self.bridge.cv2_to_imgmsg(mask, encoding="mono8")
-        ## cloud_rgb
-        hd = Header(frame_id=self.coord_cam, stamp=rospy.Time.now())
-        fds = [
-            PointField('x', 0, PointField.FLOAT32, 1),
-            PointField('y', 4, PointField.FLOAT32, 1),
-            PointField('z', 8, PointField.FLOAT32, 1),
-            PointField('r', 12, PointField.FLOAT32, 1),
-            PointField('g', 16, PointField.FLOAT32, 1),
-            PointField('b', 20, PointField.FLOAT32, 1),
-        ]
-        cld = pc2.create_cloud(hd, fds, np.reshape(np.concatenate([self.cld, rgb], axis=-1), (-1, 6)))
-        msg.cloud = cld
-
+        msg = GraspInferRequest(
+            mask = self.bridge.cv2_to_imgmsg(mask, encoding="mono8"),
+            cloud = self.create_pc2_msg(cld, rgb)
+        )
+        
         print("generating grasps from GraspNet service")
-
         res:GraspInferResponse = self.grasp_det(msg)
         grasps = res.pose
         if not res.result or not len(grasps):
             return
-        
         print("grasps generated")
         
         ## `goal` is in the same link with `depth`
         goal = self.filt_grps(grasps)
-# self.pub_grp(goal)
-
-# print("appoaching to grasp goal")
-        
-# self.approach(goal)
-# ## move arm to grasp goal
-
-# print("controlling arm to grasp goal")
-
-        trans:TransformStamped = self.tf_buf.lookup_transform(self.coord_arm_base, self.coord_cam, rospy.Time(0), rospy.Duration(1.0))
-        goal = Pose(position=Vector2Point(trans.transform.translation), orientation=trans.transform.rotation)
         Thread(target=self.pub_grp, args=(goal,)).start()
-        input(f"goal is {goal}. press enter to continue")
+        if (input(f"goal is {goal}. press enter to continue") == "q"):
+            return
         self.arm_ctl(goal)
 
         print("trying to grasp")
@@ -179,10 +156,9 @@ class FBI:
         while not rospy.is_shutdown():
             msg = PoseStamped()
             msg.header.stamp = rospy.Time.now()
-            msg.header.frame_id = self.coord_arm_base
+            msg.header.frame_id = self.coord_cam
             msg.pose = goal
             pub.publish(msg)
-            print("grasp goal published")
             rate.sleep()
         return 
 
@@ -201,7 +177,30 @@ class FBI:
     def on_rec_depth(self, msg:Image):
         self.img_dep = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1") / 1000.0
         self.cld, _ = reconstruct(self.img_dep, self.cam_intrin)
+        hd = Header(frame_id=self.coord_cam, stamp=rospy.Time.now())
+        fds = [
+            PointField('x', 0, PointField.FLOAT32, 1),
+            PointField('y', 4, PointField.FLOAT32, 1),
+            PointField('z', 8, PointField.FLOAT32, 1),
+        ]
+        msg_pc2 = pc2.create_cloud(hd, fds, np.reshape(self.cld, (-1, 3)))
+        self.pub_cld.publish(msg_pc2)
         return
+    
+    def create_pc2_msg(self, cld, rgb):
+        ## cloud_rgb
+        hd = Header(frame_id=self.coord_cam, stamp=rospy.Time.now())
+        fds = [
+            PointField('x', 0, PointField.FLOAT32, 1),
+            PointField('y', 4, PointField.FLOAT32, 1),
+            PointField('z', 8, PointField.FLOAT32, 1),
+            PointField('r', 12, PointField.FLOAT32, 1),
+            PointField('g', 16, PointField.FLOAT32, 1),
+            PointField('b', 20, PointField.FLOAT32, 1),
+        ]
+        msg_pc2 = pc2.create_cloud(hd, fds, np.reshape(np.concatenate([cld, rgb], axis=-1), (-1, 6)))
+        return msg_pc2
+
     
 
 if __name__ == '__main__':
