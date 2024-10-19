@@ -34,6 +34,7 @@ find_package(catkin REQUIRED COMPONENTS
 add_service_files(
   FILES
   setgoal.srv
+  setrad.srv
 )
 
 generate_messages(
