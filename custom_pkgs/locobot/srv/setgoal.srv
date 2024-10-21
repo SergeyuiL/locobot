@@ -1,4 +1,4 @@
 geometry_msgs/Pose goal
 ---
-bool res
-string response
+bool result
+string message

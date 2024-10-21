@@ -111,8 +111,8 @@ class LocobotArm():
         target_position, target_oritation = _pose_to_tuple(req.goal)
         success = self.move_end_to_pose(position=target_position, orientation=target_oritation, nonblocking=False)
         resp = setgoalResponse()
-        resp.res = success
-        resp.response = "success" if success else "failed"
+        resp.result = success
+        resp.message = "success" if success else "failed"
         return resp
     
     def reach_c(self, req:setgoalResponse):
@@ -120,8 +120,8 @@ class LocobotArm():
         target_position, target_oritation = _pose_to_tuple(req.goal)
         success = self.move_to_pose_with_cartesian(position=target_position, orientation=target_oritation)
         resp = setgoalResponse()
-        resp.res = success
-        resp.response = "success" if success else "failed"
+        resp.result = success
+        resp.message = "success" if success else "failed"
         return resp
 
     def on_jnt_stats(self, joint_state: JointState):

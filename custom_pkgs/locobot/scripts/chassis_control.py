@@ -26,8 +26,8 @@ class Chassis:
             r.sleep()
         ## return response
         resp = setgoalResponse()
-        resp.res = True
-        resp.response = "Goal reached"
+        resp.result = True
+        resp.message = "Goal reached"
         return resp
 
     def on_status(self, msg:MoveBaseActionResult):
