@@ -118,7 +118,7 @@ class LocobotArm():
     def reach_c(self, req:setgoalResponse):
         """ reach goal pose with cartesian path """
         target_position, target_oritation = _pose_to_tuple(req.goal)
-        success = self.move_to_pose_with_cartesian(position=target_position, orientation=target_oritation)
+        success = self.move_to_pose_with_cartesian(position=target_position, rotation=target_oritation)
         resp = setgoalResponse()
         resp.result = success
         resp.message = "success" if success else "failed"
@@ -127,14 +127,13 @@ class LocobotArm():
     def on_jnt_stats(self, joint_state: JointState):
         self._jnt_stats = joint_state
     
-    def move_to_pose_with_cartesian(self, position, rotation, min_fraction=0.95):
+    def move_to_pose_with_cartesian(self, position, rotation, min_fraction=0.8):
         waypoint_poses = []
         waypoint_poses.append(_tuple_to_pose(self.end_pose))
-        waypoint_poses.append((position, rotation))
+        waypoint_poses.append(_tuple_to_pose((position, rotation)))
         path, fraction = self.arm_group.compute_cartesian_path(
             waypoints=waypoint_poses,
-            eef_step=0.01,
-            jump_threshold=100.0,
+            eef_step=0.05,
         )
         print(f"Planned cartesian path with {len(path.joint_trajectory.points)} poses, fraction {fraction}")
         if fraction < min_fraction:
@@ -303,7 +302,8 @@ class LocobotArm():
 if __name__ == "__main__":
     rospy.init_node("locobot_arm_moveit_test")
     arm = LocobotArm()
-    p1 = (np.array([0.5, -0.14, 0.15]), np.array([0.0, 0.0, 0.0, 1.0]))
-    arm.move_end_to_pose(*p1)
+    # p1 = (np.array([0.5, -0.14, 0.15]), np.array([0.0, 0.0, 0.0, 1.0]))
+    # arm.move_end_to_pose(*p1)
+    arm.move_to_pose_with_cartesian(np.array([0.45, 0, 0.45]), np.array([0.0, 0.0, 0.0, 1.0]))
     arm.sleep()
     rospy.spin()

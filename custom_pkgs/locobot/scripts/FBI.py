@@ -19,7 +19,7 @@ from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2, PointField
 import sensor_msgs.point_cloud2 as pc2
 from std_msgs.msg import Header
-from geometry_msgs.msg import TransformStamped, Pose, PoseStamped, Point, Vector3Stamped, Vector3, PoseArray, Quaternion
+from geometry_msgs.msg import TransformStamped, Pose, PoseStamped, Point, Vector3Stamped, Vector3, PoseArray, Quaternion, Twist
 import tf2_geometry_msgs
 
 
@@ -37,6 +37,8 @@ def Vector2Point(v: Vector3):
 
 def transform_pose(pose:Pose, dst_frame:str, src_frame:str, tf_buf:tf2_ros.Buffer)->Pose:
     """ transform pose from `src_frame` to `dst_frame` now """
+    while not tf_buf.can_transform(dst_frame, src_frame, rospy.Time(0)):
+        rospy.sleep(0.2)
     msg = PoseStamped()
     msg.pose = pose
     msg.header.frame_id = src_frame
@@ -45,6 +47,8 @@ def transform_pose(pose:Pose, dst_frame:str, src_frame:str, tf_buf:tf2_ros.Buffe
 
 def transform_vec(vec:Vector3, dst_frame:str, src_frame:str, tf_buf:tf2_ros.Buffer)->Vector3:
     """ transform vector from `src_frame` to `dst_frame` now """
+    while not tf_buf.can_transform(dst_frame, src_frame, rospy.Time(0)):
+        rospy.sleep(0.2)
     trans = tf_buf.lookup_transform(dst_frame, src_frame, rospy.Time(0))
     msg = Vector3Stamped()
     msg.vector = vec
@@ -74,26 +78,15 @@ def reconstruct(depth:np.ndarray, cam_intrin:np.ndarray, rgb=None):
     return cld, rgb_cld
 
 def reset_arm():
-    jnts = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
     prx = rospy.ServiceProxy('/locobot/reboot_motors', Reboot)
-    for jnt in jnts:
-        prx('single', jnt, False, True)
+    prx('group', 'arm', True, True)
 
 class FBI:
     def __init__(self):
         rospy.init_node('FBI', anonymous=True)
         print("init node in " + __file__)
 
-        rospy.wait_for_service('/locobot/arm_control')
-        print("all_control.py is up")
         cam_info:CameraInfo = rospy.wait_for_message('/locobot/camera/color/camera_info', CameraInfo)
-        rospy.wait_for_message('/locobot/camera/color/image_raw', Image)
-        rospy.wait_for_message('/locobot/camera/aligned_depth_to_color/image_raw', Image)
-        print("RGBD camera is up")
-        rospy.wait_for_service('/grasp_infer')
-        print("GraspNet is up")
-        rospy.wait_for_service('/sam2gpt4_infer')
-        print("sam2gpt4 is up")
 
         ## actuation API
         self.arm_ctl = rospy.ServiceProxy('/locobot/arm_control', setgoal)
@@ -102,24 +95,22 @@ class FBI:
         self.gripper_ctl = rospy.ServiceProxy('/locobot/gripper_control', SetBool)
         self.cam_yaw_ctl = rospy.ServiceProxy('/locobot/camera_yaw_control', setrad)
         self.cam_pitch_ctl = rospy.ServiceProxy('/locobot/camera_pitch_control', setrad)
-
+        self.pub_vel = rospy.Publisher('/locobot/mobile_base/commands/velocity', Twist, queue_size=10)
         ## perception API
         self.grasp_det = rospy.ServiceProxy('/grasp_infer', GraspInfer)
         self.seg_det = rospy.ServiceProxy('/sam2gpt4_infer', Sam2Gpt4Infer)
+        ## visualization
+        self.pub_cld = rospy.Publisher('/locobot/point_cloud', PointCloud2, queue_size=1)   ## for visualization and debug
 
         ## params
         self.is_quit = False
         self.goal = None ## goal pose in map frame
-
         ## constant
         self.cam_intrin = np.array(cam_info.K).reshape((3, 3))
         self.coord_map = "map"
         self.coord_arm_base = "locobot/base_footprint"
         self.coord_grasp = "locobot/grasp_goal"
-        self.coord_cam = "locobot/camera_depth_link" ## not locobot/camera_aligned_depth_to_color_frame
-        ## TODO: look up the coordinate of gripper in rviz
-        # self.coord_gripper = "locobot/"
-
+        self.coord_cam = "locobot/camera_color_optical_frame" ## not locobot/camera_aligned_depth_to_color_frame
         ## reference
         self.bridge = CvBridge()
         self.tf_buf = tf2_ros.Buffer()
@@ -129,21 +120,29 @@ class FBI:
         ## subscribe image
         rospy.Subscriber('/locobot/camera/color/image_raw', Image, self.on_rec_img)
         rospy.Subscriber('/locobot/camera/aligned_depth_to_color/image_raw', Image, self.on_rec_depth)
-        self.pub_cld = rospy.Publisher('/locobot/point_cloud', PointCloud2, queue_size=1)   ## for visualization and debug
+
+        rospy.wait_for_service('/locobot/arm_control')
+        print("all_control.py is up")
+        rospy.wait_for_message('/locobot/camera/color/image_raw', Image)
+        rospy.wait_for_message('/locobot/camera/aligned_depth_to_color/image_raw', Image)
+        print("RGBD camera is up")
+        rospy.wait_for_service('/grasp_infer')
+        print("GraspNet is up")
+        rospy.wait_for_service('/sam2gpt4_infer')
+        print("sam2gpt4 is up")
 
         ## publish grasp goal (if possible)
         Thread(target=self.pub_grp).start()
 
         print("---------- init done ----------")
+        rospy.sleep(1)
         self.main()
         return
 
     def main(self):
         ## step 1: grasp handle
-        self.cam_yaw_ctl(0.0)
-        self.cam_pitch_ctl(0.6)
         print("+++ grasping handle")
-        mask = self.get_mask("top handle")
+        mask = self.get_mask("upmost handle")
         self.grasp(mask)
 
         print("pulling handle")
@@ -159,39 +158,33 @@ class FBI:
         self.arm_sleep(True)
 
         ## step 2: grasp bowl
-        self.cam_yaw_ctl(0.0)
-        self.cam_pitch_ctl(0.9)
+        print("turning left")
+        self.pub_vel.publish(Twist(angular=Vector3(z=1.2)))
+        rospy.sleep(10)
         print("+++ grasping bowl")
         mask = self.get_mask("bowl")
         self.grasp(mask)
         
-        print("moving upwards")
-        ee_goal = transform_pose(self.goal, self.coord_arm_base, self.coord_map, self.tf_buf)
-        ee_goal.position.z = 0.4
-        self.goal = transform_pose(ee_goal, self.coord_map, self.coord_arm_base, self.tf_buf)
-        self.authenticate(self.goal)
-        self.arm_ctl(ee_goal)
+        print("holding and rotating")
+        self.arm_ctl(Pose(position=Point(x=0.35, y=0.0, z=0.5), orientation=Quaternion(w=1.0)))
+        self.pub_vel.publish(Twist(angular=Vector3(z=-1.2)))
+        rospy.sleep(3)
 
-        print("moving forwards")
-        ee_goal.orientation = Quaternion(x=0, y=0, z=0, w=1)
-        ee_goal.position = Point(x=0.55, y=0.0, z=0.48)
-        self.goal = transform_pose(ee_goal, self.coord_map, self.coord_arm_base, self.tf_buf)
-        self.authenticate(self.goal)
-        self.arm_ctl(ee_goal)
-        rospy.sleep(1)
+        print("placing obj")
+        self.arm_ctl(Pose(position=Point(x=0.4, y=0.0, z=0.4), orientation=Quaternion(w=1.0)))
+        rospy.sleep(3)
         self.gripper_ctl(False)
 
         print("resetting arm")
+        self.arm_ctl(Pose(position=Point(x=0.35, y=0.0, z=0.5), orientation=Quaternion(w=1.0)))
+        self.gripper_ctl(True)
         self.arm_sleep(True)
         self.quit(0)
         return 
     
     def grasp(self, mask):
         """ grasp given object defined by `mask` """
-        # TODO: calibrate roboarm to eliminate offset
-        # ee_goal.position.z += 0.01 ## offset
         rgb = deepcopy(self.img_rgb)
-        depth = deepcopy(self.img_dep)
         cld = deepcopy(self.cld)
 
         print("sending grasp infer request")
@@ -211,7 +204,7 @@ class FBI:
         self.authenticate(self.goal)
         self.gripper_ctl(False)
         ## first move to the front of grasp
-        t = transform_vec(Vector3(x=-0.1, y=0, z=0), self.coord_map, self.coord_grasp, self.tf_buf)
+        t = transform_vec(Vector3(x=-0.08, y=0, z=0), self.coord_map, self.coord_grasp, self.tf_buf)
         self.goal = translate(self.goal, t) 
         ee_goal = transform_pose(self.goal, self.coord_arm_base, self.coord_map, self.tf_buf)
         self.arm_ctl(ee_goal)
@@ -220,8 +213,8 @@ class FBI:
         ee_goal = transform_pose(goal, self.coord_arm_base, self.coord_cam, self.tf_buf)
         resp:setgoalResponse = self.arm_ctl(ee_goal)
         ## check
-        # if not resp.result:
-        #     print(f"failed to reach grasp goal, resp.message: {resp.message}")
+        if not resp.result:
+            print(f"warning: failed to reach grasp goal, resp.message: {resp.message}")
         #     self.quit(0)
         rospy.sleep(1)
         self.gripper_ctl(True)
@@ -278,25 +271,27 @@ class FBI:
         if not resp.result:
             return None
         mask = self.bridge.imgmsg_to_cv2(resp.mask, desired_encoding="mono8")
-        cv2.imwrite(os.path.join(os.path.dirname(__file__), f"mask_{prompt}.png"), mask.astype(np.uint8)*255)
+        cv2.imwrite(os.path.join(os.path.dirname(__file__), f"mask/{prompt}.png"), mask.astype(np.uint8)*255)
         return mask
 
     def on_rec_img(self, msg:Image):
+        if self.is_quit:
+            return
         self.img_rgb = self.bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
-        return
 
     def on_rec_depth(self, msg:Image):
+        if self.is_quit:
+            return
         self.img_dep = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1") / 1000.0
         self.cld, _ = reconstruct(self.img_dep, self.cam_intrin)
-        hd = Header(frame_id=self.coord_cam, stamp=rospy.Time.now())
-        fds = [
-            PointField('x', 0, PointField.FLOAT32, 1),
-            PointField('y', 4, PointField.FLOAT32, 1),
-            PointField('z', 8, PointField.FLOAT32, 1),
-        ]
-        msg_pc2 = pc2.create_cloud(hd, fds, np.reshape(self.cld, (-1, 3)))
-        self.pub_cld.publish(msg_pc2)
-        return
+        # hd = Header(frame_id=self.coord_cam, stamp=rospy.Time.now())
+        # fds = [
+        #     PointField('x', 0, PointField.FLOAT32, 1),
+        #     PointField('y', 4, PointField.FLOAT32, 1),
+        #     PointField('z', 8, PointField.FLOAT32, 1),
+        # ]
+        # msg_pc2 = pc2.create_cloud(hd, fds, np.reshape(self.cld, (-1, 3)))
+        # self.pub_cld.publish(msg_pc2)
     
     def create_pc2_msg(self, cld, rgb):
         ## cloud_rgb

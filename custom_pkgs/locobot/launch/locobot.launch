@@ -5,8 +5,8 @@
   <arg name="base_type"                         default="$(optenv INTERBOTIX_XSLOCOBOT_BASE_TYPE kobuki)"/>
   <arg name="use_sim"                           default="false"/>
 
-  <arg name="localization"                      default="true"/>
-  <arg name="map_dir"                           default="$(find locobot)/maps/719_1010"/>
+  <arg name="localization"                      default="false"/>
+  <arg name="map_dir"                           default="$(find locobot)/maps/default"/>
   <arg name="pure_run"                          default="false"/>
   <arg name="use_joy"                           default="false"/>
   <arg name="use_wit_imu"                       default="true"/>
@@ -18,7 +18,7 @@
   <arg name="show_gripper_bar"                  default="true"/>
   <arg name="show_gripper_fingers"              default="true"/>
   <arg name="external_urdf_loc"                 default=""/>
-  <arg name="use_rviz"                          default="false"/>
+  <arg name="use_rviz"                          default="true"/>
   <arg name="rviz_frame"                        default="$(arg robot_name)/base_footprint"/>
   <arg name="use_base"                          default="true"/>
   <arg name="use_dock"                          default="false"/>
