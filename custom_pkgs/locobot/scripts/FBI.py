@@ -10,7 +10,7 @@ import rospy
 from cv_bridge import CvBridge
 
 from locobot.srv import setgoal, setgoalRequest, setgoalResponse
-from locobot.srv import setrad, setradRequest, setradResponse
+from locobot.srv import SetFloat32, SetFloat32Request, SetFloat32Response
 from perception_service.srv import Sam2Gpt4Infer, Sam2Gpt4InferRequest, Sam2Gpt4InferResponse
 from perception_service.srv import GraspInfer, GraspInferRequest, GraspInferResponse
 from perception_service.srv import GroundedSam2Infer, GroundedSam2InferRequest, GroundedSam2InferResponse
@@ -92,24 +92,22 @@ def reset_arm():
 class FBI:
     def __init__(self):
         rospy.init_node('FBI', anonymous=True)
-        print("init node in " + __file__)
-
+        print("---------- init FBI ----------")
+        self.CHAS_PT1 = Point(x=0.15, y=-0.6, z=0)
+        self.CHAS_PT2 = Point(x=0.15, y=0, z=0)
+        self.ARM_PT1 = Point(x=0.35, y=0, z=0.5)
+        self.ARM_PT2 = Point(x=0.4, y=0, z=0.4)
+        self.init_vars()
+        self.init_caller()
+        self.wait_services()
+        ## publish grasp goal (if possible)
+        Thread(target=self.pub_grp).start()
+        print("---------- init done ----------")
+        self.main()
+        return
+    
+    def init_vars(self):
         cam_info:CameraInfo = rospy.wait_for_message('/locobot/camera/color/camera_info', CameraInfo)
-
-        ## actuation API
-        self.arm_ctl = rospy.ServiceProxy('/locobot/arm_control', setgoal)
-        self.arm_sleep = rospy.ServiceProxy('/locobot/arm_sleep', SetBool)
-        self.chassis_ctl = rospy.ServiceProxy('/locobot/chassis_control', setgoal)
-        self.gripper_ctl = rospy.ServiceProxy('/locobot/gripper_control', SetBool)
-        self.cam_yaw_ctl = rospy.ServiceProxy('/locobot/camera_yaw_control', setrad)
-        self.cam_pitch_ctl = rospy.ServiceProxy('/locobot/camera_pitch_control', setrad)
-        self.chassis_vel = rospy.Publisher('/locobot/mobile_base/commands/velocity', Twist, queue_size=10)
-        ## perception API
-        self.grasp_det = rospy.ServiceProxy('/grasp_infer', GraspInfer)
-        self.seg_det = rospy.ServiceProxy('/grounded_sam2_infer', GroundedSam2Infer)
-        ## visualization
-        self.pub_cld = rospy.Publisher('/locobot/point_cloud', PointCloud2, queue_size=1)   ## for visualization and debug
-
         ## params
         self.is_quit = False
         self.goal = None ## goal pose in map frame
@@ -119,13 +117,28 @@ class FBI:
         self.coord_arm_base = "locobot/base_footprint"
         self.coord_grasp = "locobot/grasp_goal"
         self.coord_cam = "locobot/camera_color_optical_frame" ## not locobot/camera_aligned_depth_to_color_frame
-        ## reference
+        ## ros objects
         self.bridge = CvBridge()
         self.tf_buf = tf2_ros.Buffer()
         self.tf_lstn = tf2_ros.TransformListener(self.tf_buf)
         self.tf_pub = tf2_ros.TransformBroadcaster()
+    
+    def init_caller(self):
+        ## actuation API
+        self.arm_ctl = rospy.ServiceProxy('/locobot/arm_control', setgoal)
+        self.arm_sleep = rospy.ServiceProxy('/locobot/arm_sleep', SetBool)
+        self.chassis_ctl = rospy.ServiceProxy('/locobot/chassis_control', setgoal)
+        self.gripper_ctl = rospy.ServiceProxy('/locobot/gripper_control', SetBool)
+        self.cam_yaw_ctl = rospy.ServiceProxy('/locobot/camera_yaw_control', SetFloat32)
+        self.cam_pitch_ctl = rospy.ServiceProxy('/locobot/camera_pitch_control', SetFloat32)
+        self.chassis_vel = rospy.Publisher('/locobot/mobile_base/commands/velocity', Twist, queue_size=10)
+        ## perception API
+        self.grasp_det = rospy.ServiceProxy('/grasp_infer', GraspInfer)
+        self.seg_det = rospy.ServiceProxy('/grounded_sam2_infer', GroundedSam2Infer)
+        ## visualization
+        self.pub_cld = rospy.Publisher('/locobot/point_cloud', PointCloud2, queue_size=1)   ## for visualization and debug
 
-        ## subscribe image
+    def wait_services(self):
         rospy.Subscriber('/locobot/camera/color/image_raw', Image, self.on_rec_img)
         rospy.Subscriber('/locobot/camera/aligned_depth_to_color/image_raw', Image, self.on_rec_depth)
 
@@ -139,20 +152,12 @@ class FBI:
         rospy.wait_for_service('/grounded_sam2_infer')
         print("grounded_sam is up")
 
-        ## publish grasp goal (if possible)
-        Thread(target=self.pub_grp).start()
-
-        print("---------- init done ----------")
-        rospy.sleep(1)
-        self.main()
-        return
-
     def main(self):
         # # navigate to the front of the cabinet
         # self.authenticate("Localization mode")
         # ## TODO: change to detection-based method instead of hard coding here
-        # self.chassis_ctl(Pose(position=Point(x=0, y=-0.6, z=0.0), orientation=Quaternion(w=1.0)))
-        # self.chassis_ctl(Pose(position=Point(x=0.15, y=0.0, z=0.0), orientation=Quaternion(w=1.0)))
+        # self.chassis_ctl(Pose(position=self.CHAS_PT1, orientation=Quaternion(w=1.0)))
+        # self.chassis_ctl(Pose(position=self.CHAS_PT2), orientation=Quaternion(w=1.0)))
 
         ## step 1: grasp handle
         print("----- grasping handle -----")
@@ -176,14 +181,14 @@ class FBI:
         self.grasp(mask)
         
         print("> holding and rotating")
-        self.arm_ctl(Pose(position=Point(x=0.35, y=0.0, z=0.5), orientation=Quaternion(w=1.0)))
+        self.arm_ctl(Pose(position=self.ARM_PT1, orientation=Quaternion(w=1.0)))
         self.chassis_vel.publish(Twist(angular=Vector3(z=-1.45)))
         rospy.sleep(1.5)
         self.chassis_vel.publish(Twist(linear=Vector3(x=0.1)))
         rospy.sleep(1.5)
 
         print("> placing obj")
-        self.arm_ctl(Pose(position=Point(x=0.4, y=0.0, z=0.4), orientation=Quaternion(w=1.0)))
+        self.arm_ctl(Pose(position=self.ARM_PT2, orientation=Quaternion(w=1.0)))
         rospy.sleep(3)
         self.gripper_ctl(False)
 

@@ -4,7 +4,7 @@ import rospy
 from interbotix_xs_modules.core import InterbotixRobotXSCore
 from interbotix_xs_modules.turret import InterbotixTurretXSInterface
 from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
-from locobot.srv import setrad, setradRequest, setradResponse
+from locobot.srv import SetFloat32, SetFloat32Request, SetFloat32Response
 
 
 class LocobotCamera:
@@ -23,8 +23,8 @@ class LocobotCamera:
         self.init_pitch = 0.8
         self.pitch_limits = [0.9, -0.1] # positive is down, negetive is up
         self.yaw_limits = [-0.7, 0.7]
-        self.pitch_server = rospy.Service("/locobot/camera_pitch_control", setrad, self.on_rec_pitch)
-        self.yaw_server = rospy.Service("/locobot/camera_yaw_control", setrad, self.on_rec_yaw)
+        self.pitch_server = rospy.Service("/locobot/camera_pitch_control", SetFloat32, self.on_rec_pitch)
+        self.yaw_server = rospy.Service("/locobot/camera_yaw_control", SetFloat32, self.on_rec_yaw)
         self.reset_camera()
 
     def reset_camera(self):
@@ -42,13 +42,13 @@ class LocobotCamera:
         # desired goal position [rad]
         self.camera.pan(position)
     
-    def on_rec_pitch(self, req: setradRequest):
+    def on_rec_pitch(self, req: SetFloat32Request):
         self.pitch_control(req.radian)
-        return setradResponse(True, f"pitch adjusted to {req.radian:.2f}! limit: {self.pitch_limits}")
+        return SetFloat32Response(True, f"pitch adjusted to {req.radian:.2f}! limit: {self.pitch_limits}")
 
-    def on_rec_yaw(self, req: setradRequest):
+    def on_rec_yaw(self, req: SetFloat32Request):
         self.yaw_control(req.radian)
-        return setradResponse(True, f"yaw adjusted to {req.radian:.2f}! limit: {self.yaw_limits}")
+        return SetFloat32Response(True, f"yaw adjusted to {req.radian:.2f}! limit: {self.yaw_limits}")
 
     def pitch_scan(self, req: SetBoolRequest):
         if req.data:

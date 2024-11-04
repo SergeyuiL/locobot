@@ -33,8 +33,8 @@ find_package(catkin REQUIRED COMPONENTS
 
 add_service_files(
   FILES
-  setgoal.srv
-  setrad.srv
+  SetFloat32.srv
+  SetPose.srv
 )
 
 generate_messages(
