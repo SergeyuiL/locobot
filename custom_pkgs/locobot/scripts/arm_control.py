@@ -297,7 +297,7 @@ class LocobotArm():
         else:
             return SetBoolResponse(False, "Nothing to do.")
     def sleep(self):
-        self.move_joints(np.array([0.0, -1.1, 1.55, 0.0, 0.5, 0.0]),nonblocking=True)
+        self.move_joints(np.array([0.0, -1.1, 1.55, 0.0, 0.5, 0.0]),nonblocking=False)
 
 if __name__ == "__main__":
     rospy.init_node("locobot_arm_moveit_test")
