@@ -13,6 +13,7 @@ from locobot.srv import setgoal, setgoalRequest, setgoalResponse
 from locobot.srv import setrad, setradRequest, setradResponse
 from perception_service.srv import Sam2Gpt4Infer, Sam2Gpt4InferRequest, Sam2Gpt4InferResponse
 from perception_service.srv import GraspInfer, GraspInferRequest, GraspInferResponse
+from perception_service.srv import GroundedSam2Infer, GroundedSam2InferRequest, GroundedSam2InferResponse
 from interbotix_xs_msgs.srv import Reboot
 
 from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
@@ -45,16 +46,23 @@ def transform_pose(pose:Pose, dst_frame:str, src_frame:str, tf_buf:tf2_ros.Buffe
     msg.header.stamp = rospy.Time(0)
     return tf_buf.transform(msg, dst_frame).pose
 
-def transform_vec(vec:Vector3, dst_frame:str, src_frame:str, tf_buf:tf2_ros.Buffer)->Vector3:
-    """ transform vector from `src_frame` to `dst_frame` now """
-    while not tf_buf.can_transform(dst_frame, src_frame, rospy.Time(0)):
-        rospy.sleep(0.2)
-    trans = tf_buf.lookup_transform(dst_frame, src_frame, rospy.Time(0))
+def transform_vec(vec:Vector3, dst_frame:str, src_frame:str, tf_buf:tf2_ros.Buffer, trans=None)->Vector3:
+    """ transform vector from `src_frame` to `dst_frame` now. use `trans` if it's available """
+    if trans is None:
+        while not tf_buf.can_transform(dst_frame, src_frame, rospy.Time(0)):
+            rospy.sleep(0.2)
+        trans_stamped = tf_buf.lookup_transform(dst_frame, src_frame, rospy.Time(0))
+    else:
+        trans_stamped = TransformStamped()
+        trans_stamped.header.stamp = rospy.Time(0)
+        trans_stamped.transform = trans
+        trans_stamped.header.frame_id = dst_frame
+        trans_stamped.child_frame_id = src_frame
     msg = Vector3Stamped()
     msg.vector = vec
     msg.header.frame_id = src_frame
     msg.header.stamp = rospy.Time(0)
-    return tf2_geometry_msgs.do_transform_vector3(msg, trans).vector
+    return tf2_geometry_msgs.do_transform_vector3(msg, trans_stamped).vector
 
 def translate(pose:Pose, vec:Vector3)->Pose:
     """ translate pose by vector (assume they are in same coordinate, if not, use @transform_vec first) """
@@ -95,10 +103,10 @@ class FBI:
         self.gripper_ctl = rospy.ServiceProxy('/locobot/gripper_control', SetBool)
         self.cam_yaw_ctl = rospy.ServiceProxy('/locobot/camera_yaw_control', setrad)
         self.cam_pitch_ctl = rospy.ServiceProxy('/locobot/camera_pitch_control', setrad)
-        self.pub_vel = rospy.Publisher('/locobot/mobile_base/commands/velocity', Twist, queue_size=10)
+        self.chassis_vel = rospy.Publisher('/locobot/mobile_base/commands/velocity', Twist, queue_size=10)
         ## perception API
         self.grasp_det = rospy.ServiceProxy('/grasp_infer', GraspInfer)
-        self.seg_det = rospy.ServiceProxy('/sam2gpt4_infer', Sam2Gpt4Infer)
+        self.seg_det = rospy.ServiceProxy('/grounded_sam2_infer', GroundedSam2Infer)
         ## visualization
         self.pub_cld = rospy.Publisher('/locobot/point_cloud', PointCloud2, queue_size=1)   ## for visualization and debug
 
@@ -128,8 +136,8 @@ class FBI:
         print("RGBD camera is up")
         rospy.wait_for_service('/grasp_infer')
         print("GraspNet is up")
-        rospy.wait_for_service('/sam2gpt4_infer')
-        print("sam2gpt4 is up")
+        rospy.wait_for_service('/grounded_sam2_infer')
+        print("grounded_sam is up")
 
         ## publish grasp goal (if possible)
         Thread(target=self.pub_grp).start()
@@ -140,44 +148,62 @@ class FBI:
         return
 
     def main(self):
+        # # navigate to the front of the cabinet
+        # self.authenticate("Localization mode")
+        # ## TODO: change to detection-based method instead of hard coding here
+        # self.chassis_ctl(Pose(position=Point(x=0, y=-0.6, z=0.0), orientation=Quaternion(w=1.0)))
+        # self.chassis_ctl(Pose(position=Point(x=0.15, y=0.0, z=0.0), orientation=Quaternion(w=1.0)))
+
         ## step 1: grasp handle
-        print("+++ grasping handle")
-        mask = self.get_mask("upmost handle")
+        print("----- grasping handle -----")
+        mask = self.get_mask("handle")
         self.grasp(mask)
 
-        print("pulling handle")
-        t = transform_vec(Vector3(x=-0.15, y=0, z=0), self.coord_map, self.coord_arm_base, self.tf_buf)
-        self.goal = translate(self.goal, t)
-        self.authenticate(self.goal)
-        ee_goal = transform_pose(self.goal, self.coord_arm_base, self.coord_map, self.tf_buf)
-        self.arm_ctl(ee_goal)
-        rospy.sleep(0.5)
+        print("> pulling handle")
+        self.chassis_vel.publish(Twist(linear=Vector3(x=-0.12)))
+        rospy.sleep(2)
         self.gripper_ctl(False)
 
-        print("resetting arm")
+        print("> turning left")
+        self.chassis_vel.publish(Twist(angular=Vector3(z=1.2)))
+        rospy.sleep(2)
+        print("> resetting arm")
         self.arm_sleep(True)
 
         ## step 2: grasp bowl
-        print("turning left")
-        self.pub_vel.publish(Twist(angular=Vector3(z=1.2)))
-        rospy.sleep(10)
-        print("+++ grasping bowl")
+        print("----- grasping bowl -----")
         mask = self.get_mask("bowl")
         self.grasp(mask)
         
-        print("holding and rotating")
+        print("> holding and rotating")
         self.arm_ctl(Pose(position=Point(x=0.35, y=0.0, z=0.5), orientation=Quaternion(w=1.0)))
-        self.pub_vel.publish(Twist(angular=Vector3(z=-1.2)))
-        rospy.sleep(3)
+        self.chassis_vel.publish(Twist(angular=Vector3(z=-1.45)))
+        rospy.sleep(1.5)
+        self.chassis_vel.publish(Twist(linear=Vector3(x=0.1)))
+        rospy.sleep(1.5)
 
-        print("placing obj")
+        print("> placing obj")
         self.arm_ctl(Pose(position=Point(x=0.4, y=0.0, z=0.4), orientation=Quaternion(w=1.0)))
         rospy.sleep(3)
         self.gripper_ctl(False)
 
-        print("resetting arm")
-        self.arm_ctl(Pose(position=Point(x=0.35, y=0.0, z=0.5), orientation=Quaternion(w=1.0)))
-        self.gripper_ctl(True)
+        print("> resetting arm and grasp handle")
+        ## back
+        self.chassis_vel.publish(Twist(linear=Vector3(x=-0.14)))
+        ## reset arm
+        self.arm_sleep(True)
+        ## grasp handle again
+        print("----- grasping handle -----")
+        mask = self.get_mask("handle")
+        self.grasp(mask)
+        ## push
+        self.authenticate("Move")
+        self.chassis_vel.publish(Twist(linear=Vector3(x=0.13)))
+        ## open gripper
+        self.gripper_ctl(False)
+        rospy.sleep(2)
+        ## back and reset arm
+        self.chassis_vel.publish(Twist(linear=Vector3(x=-0.08)))
         self.arm_sleep(True)
         self.quit(0)
         return 
@@ -187,24 +213,26 @@ class FBI:
         rgb = deepcopy(self.img_rgb)
         cld = deepcopy(self.cld)
 
-        print("sending grasp infer request")
+        # print("sending grasp infer request")
         msg = GraspInferRequest(
             mask = self.bridge.cv2_to_imgmsg(mask, encoding="mono8"),
             cloud = self.create_pc2_msg(cld, rgb)
         )
-        print("generating grasps from GraspNet service")
+        # print("generating grasps from GraspNet service")
         resp:GraspInferResponse = self.grasp_det(msg)
         grasps = resp.pose
         if not resp.result or not len(grasps):
             return
-        print("grasps generated")
+        # print("grasps generated")
         ## `goal` is in the same link with `depth`
         goal = self.filt_grps(grasps)
         self.goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
-        self.authenticate(self.goal)
+        self.authenticate("Grasp")
         self.gripper_ctl(False)
+        ## wait a few seconds for coord_grasp published
+        rospy.sleep(0.5)
         ## first move to the front of grasp
-        t = transform_vec(Vector3(x=-0.08, y=0, z=0), self.coord_map, self.coord_grasp, self.tf_buf)
+        t = transform_vec(Vector3(x=-0.1, y=0, z=0), self.coord_map, self.coord_grasp, self.tf_buf)
         self.goal = translate(self.goal, t) 
         ee_goal = transform_pose(self.goal, self.coord_arm_base, self.coord_map, self.tf_buf)
         self.arm_ctl(ee_goal)
@@ -218,16 +246,16 @@ class FBI:
         #     self.quit(0)
         rospy.sleep(1)
         self.gripper_ctl(True)
+        rospy.sleep(2)
         print("finish grasping")
         return
     
-    def authenticate(self, goal:Pose):
+    def authenticate(self, description:str=''):
         """
         authenticate arm executation for goal pose (ask for 'enter' in terminal)
         user can check the goal pose ("locobot/grasp_goal", "TransformStamped") in rviz
         """
-        # print(f"+++ Goal (in map frame) is \n{goal}\n")
-        if (input("==> Press enter to continue: ") != ""):
+        if (input(f"<Confirm '{description}' with Enter:>") != ""):
             print("aborted")
             self.quit(1)
         return
@@ -267,12 +295,29 @@ class FBI:
     def get_mask(self, prompt:str):
         """ call segmentation service to get mask of `prompt` """
         rgb = deepcopy(self.img_rgb)
-        resp:Sam2Gpt4InferResponse = self.seg_det(prompt, self.bridge.cv2_to_imgmsg(rgb, encoding="rgb8"))
+        cv2.imwrite(os.path.join(os.path.dirname(__file__), f"mask/{prompt}_input.png"), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+        resp:GroundedSam2InferResponse = self.seg_det(prompt, self.bridge.cv2_to_imgmsg(rgb, encoding="rgb8"))
         if not resp.result:
             return None
-        mask = self.bridge.imgmsg_to_cv2(resp.mask, desired_encoding="mono8")
-        cv2.imwrite(os.path.join(os.path.dirname(__file__), f"mask/{prompt}.png"), mask.astype(np.uint8)*255)
+        for i in range(len(resp.masks)):
+            mask = self.bridge.imgmsg_to_cv2(resp.masks[i], desired_encoding="mono8")
+            cv2.imwrite(os.path.join(os.path.dirname(__file__), f"mask/{prompt}_{i}.png"), mask.astype(np.uint8))
+        mask = self.filt_masks(prompt, resp)
+        if mask is not None:
+            cv2.imwrite(os.path.join(os.path.dirname(__file__), f"mask/{prompt}_output.png"), mask.astype(np.uint8))
         return mask
+    
+    def filt_masks(self, prompt, resp:GroundedSam2InferResponse):
+        """ filter with rules """
+        masks = [self.bridge.imgmsg_to_cv2(m, desired_encoding="mono8") for m in resp.masks]
+        if 'handle' not in prompt:
+            return masks[0]
+        
+        boxes = np.array(resp.bounding_boxes, dtype=int).reshape((-1, 4)).tolist()
+        print(boxes)
+        box = min([box for box in boxes if box[1] >= 50], key=lambda box:box[1])
+        idx = boxes.index(box)
+        return masks[idx]
 
     def on_rec_img(self, msg:Image):
         if self.is_quit:
