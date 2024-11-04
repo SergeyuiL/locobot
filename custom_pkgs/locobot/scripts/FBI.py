@@ -9,7 +9,7 @@ import tf, tf2_ros
 import rospy
 from cv_bridge import CvBridge
 
-from locobot.srv import setgoal, setgoalRequest, setgoalResponse
+from locobot.srv import SetPose, SetPoseRequest, SetPoseResponse
 from locobot.srv import SetFloat32, SetFloat32Request, SetFloat32Response
 from perception_service.srv import Sam2Gpt4Infer, Sam2Gpt4InferRequest, Sam2Gpt4InferResponse
 from perception_service.srv import GraspInfer, GraspInferRequest, GraspInferResponse
@@ -125,9 +125,9 @@ class FBI:
     
     def init_caller(self):
         ## actuation API
-        self.arm_ctl = rospy.ServiceProxy('/locobot/arm_control', setgoal)
+        self.arm_ctl = rospy.ServiceProxy('/locobot/arm_control', SetPose)
         self.arm_sleep = rospy.ServiceProxy('/locobot/arm_sleep', SetBool)
-        self.chassis_ctl = rospy.ServiceProxy('/locobot/chassis_control', setgoal)
+        self.chassis_ctl = rospy.ServiceProxy('/locobot/chassis_control', SetPose)
         self.gripper_ctl = rospy.ServiceProxy('/locobot/gripper_control', SetBool)
         self.cam_yaw_ctl = rospy.ServiceProxy('/locobot/camera_yaw_control', SetFloat32)
         self.cam_pitch_ctl = rospy.ServiceProxy('/locobot/camera_pitch_control', SetFloat32)
@@ -244,7 +244,7 @@ class FBI:
         ## then move to grasp goal
         self.goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
         ee_goal = transform_pose(goal, self.coord_arm_base, self.coord_cam, self.tf_buf)
-        resp:setgoalResponse = self.arm_ctl(ee_goal)
+        resp:SetPoseResponse = self.arm_ctl(ee_goal)
         ## check
         if not resp.result:
             print(f"warning: failed to reach grasp goal, resp.message: {resp.message}")

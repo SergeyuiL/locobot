@@ -1,4 +1,4 @@
-from locobot.srv import setgoal, setgoalRequest, setgoalResponse
+from locobot.srv import SetPose, SetPoseRequest, SetPoseResponse
 from move_base_msgs.msg import MoveBaseActionResult
 from geometry_msgs.msg import Pose, PoseStamped
 import rospy
@@ -8,15 +8,15 @@ class Chassis:
     def __init__(self):
         self.chassis_pub = rospy.Publisher("/locobot/move_base_simple/goal", PoseStamped, queue_size=10)
         rospy.Subscriber("/locobot/move_base/result", MoveBaseActionResult, self.on_status)
-        rospy.Service("/locobot/chassis_control", setgoal, self.on_chassis_control)
+        rospy.Service("/locobot/chassis_control", SetPose, self.on_chassis_control)
     
-    def on_chassis_control(self, req:setgoalRequest):
+    def on_chassis_control(self, req:SetPoseRequest):
         self.reached = False
         ## publish goal
         mes = PoseStamped()
         mes.header.stamp = rospy.Time.now()
         mes.header.frame_id = "map"
-        mes.pose = req.goal
+        mes.pose = req.data
         self.chassis_pub.publish(mes)
         ## wait for goal reached
         r = rospy.Rate(10)
@@ -25,7 +25,7 @@ class Chassis:
                 break
             r.sleep()
         ## return response
-        resp = setgoalResponse()
+        resp = SetPoseResponse()
         resp.result = True
         resp.message = "Goal reached"
         return resp

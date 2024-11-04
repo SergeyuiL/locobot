@@ -2,20 +2,20 @@
 ## used to test whether locobot arm, chassis and camera work fine
 
 import rospy
-from locobot.srv import setgoal, setgoalRequest, setgoalResponse
+from locobot.srv import SetPose, SetPoseRequest, SetPoseResponse
 from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
 
 def test_arm():
-    arm_proxy = rospy.ServiceProxy("/locobot/arm_control", setgoal)
+    arm_proxy = rospy.ServiceProxy("/locobot/arm_control", SetPose)
     arm_proxy.wait_for_service()
-    req = setgoalRequest()
-    req.goal.position.x = 0.5
-    req.goal.position.y = 0
-    req.goal.position.z = 0.3
-    req.goal.orientation.x = 0
-    req.goal.orientation.y = 0
-    req.goal.orientation.z = 0
-    req.goal.orientation.w = 1
+    req = SetPoseRequest()
+    req.data.position.x = 0.5
+    req.data.position.y = 0
+    req.data.position.z = 0.3
+    req.data.orientation.x = 0
+    req.data.orientation.y = 0
+    req.data.orientation.z = 0
+    req.data.orientation.w = 1
     arm_proxy(req)
 
 def test_gripper():
@@ -28,16 +28,16 @@ def test_gripper():
     gripper_proxy(req)
 
 def test_chassis():
-    chassis_proxy = rospy.ServiceProxy("/locobot/chassis_control", setgoal)
+    chassis_proxy = rospy.ServiceProxy("/locobot/chassis_control", SetPose)
     chassis_proxy.wait_for_service()
-    req = setgoalRequest()
-    req.goal.position.x = 0
-    req.goal.position.y = 0
-    req.goal.position.z = 0
-    req.goal.orientation.x = 0
-    req.goal.orientation.y = 0
-    req.goal.orientation.z = 0
-    req.goal.orientation.w = 1
+    req = SetPoseRequest()
+    req.data.position.x = 0
+    req.data.position.y = 0
+    req.data.position.z = 0
+    req.data.orientation.x = 0
+    req.data.orientation.y = 0
+    req.data.orientation.z = 0
+    req.data.orientation.w = 1
     chassis_proxy(req)
 
 if __name__ == "__main__":

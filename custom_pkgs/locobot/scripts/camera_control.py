@@ -43,12 +43,12 @@ class LocobotCamera:
         self.camera.pan(position)
     
     def on_rec_pitch(self, req: SetFloat32Request):
-        self.pitch_control(req.radian)
-        return SetFloat32Response(True, f"pitch adjusted to {req.radian:.2f}! limit: {self.pitch_limits}")
+        self.pitch_control(req.data)
+        return SetFloat32Response(True, f"pitch adjusted to {req.data:.2f}! limit: {self.pitch_limits}")
 
     def on_rec_yaw(self, req: SetFloat32Request):
-        self.yaw_control(req.radian)
-        return SetFloat32Response(True, f"yaw adjusted to {req.radian:.2f}! limit: {self.yaw_limits}")
+        self.yaw_control(req.data)
+        return SetFloat32Response(True, f"yaw adjusted to {req.data:.2f}! limit: {self.yaw_limits}")
 
     def pitch_scan(self, req: SetBoolRequest):
         if req.data:

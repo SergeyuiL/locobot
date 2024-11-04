@@ -17,7 +17,8 @@ import sys
 
 from geometry_msgs.msg import PoseStamped, Pose
 from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
-from locobot.srv import setgoal, setgoalRequest, setgoalResponse
+from locobot.srv import SetPose, SetPoseRequest, SetPoseResponse
+from locobot.srv import SetFloat32, SetFloat32Request, SetFloat32Response
 
 def _tuple_to_pose(pose_tuple: Tuple[np.ndarray, np.ndarray]) -> Pose:
     return Pose(
@@ -77,10 +78,12 @@ class LocobotArm():
         self.tf_buffer.lookup_transform("locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time(), rospy.Duration(5.0))
 
         ## reach goal pose (with any path)
-        rospy.Service("/locobot/arm_control", setgoal, self.reach)
+        rospy.Service("/locobot/arm_control", SetPose, self.reach)
         
         ## reach goal pose with cartesian path
-        rospy.Service("locobot/arm_control_cartesian", setgoal, self.reach_c)
+        rospy.Service("locobot/arm_control_cartesian", SetPose, self.reach_c)
+
+        rospy.Service("locobot/arm_config", SetFloat32, self.arm_config)
 
         ## for quick test
         rospy.Service("/locobot/arm_sleep", SetBool, self.sleep_cb)
@@ -106,22 +109,35 @@ class LocobotArm():
             for joint_name in self.jnts_name
         ])
     
-    def reach(self, req:setgoalRequest):
+    def reach(self, req:SetPoseRequest):
         """ reach goal popse with any path """
-        target_position, target_oritation = _pose_to_tuple(req.goal)
+        target_position, target_oritation = _pose_to_tuple(req.data)
         success = self.move_end_to_pose(position=target_position, orientation=target_oritation, nonblocking=False)
-        resp = setgoalResponse()
+        resp = SetPoseResponse()
         resp.result = success
         resp.message = "success" if success else "failed"
         return resp
     
-    def reach_c(self, req:setgoalResponse):
+    def reach_c(self, req:SetPoseRequest):
         """ reach goal pose with cartesian path """
-        target_position, target_oritation = _pose_to_tuple(req.goal)
+        target_position, target_oritation = _pose_to_tuple(req.data)
         success = self.move_to_pose_with_cartesian(position=target_position, rotation=target_oritation)
-        resp = setgoalResponse()
+        resp = SetPoseResponse()
         resp.result = success
         resp.message = "success" if success else "failed"
+        return resp
+
+    def arm_config(self, req:SetFloat32Request):
+        factor = req.data
+        resp = SetFloat32Response()
+        if not (factor > 0 and factor <= 1):
+            resp.result = False
+            resp.message = f"provided scaling factor {factor:.3f} is not in (0, 1]"
+        else:
+            self.arm_group.set_max_acceleration_scaling_factor(factor)
+            self.arm_group.set_max_velocity_scaling_factor(factor)
+            resp.result = True
+            resp.message = f"velocity and acceleration scaling factor changed to {factor:.3f}"
         return resp
 
     def on_jnt_stats(self, joint_state: JointState):

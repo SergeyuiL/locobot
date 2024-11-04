@@ -1,4 +1,4 @@
-float32 radian
+float32 data
 ---
 bool result
 string message
