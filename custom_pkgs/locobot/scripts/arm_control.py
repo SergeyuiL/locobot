@@ -69,6 +69,8 @@ class LocobotArm():
         self.tf_listener = TransformListener(self.tf_buffer)
 
         self.robot, self.scene, self.arm_group = initialize_moveit()
+        self.arm_group.set_max_acceleration_scaling_factor(0.5)
+        self.arm_group.set_max_velocity_scaling_factor(0.5)
         # initialize_motor_pids()
 
         self.arm_path_pub = rospy.Publisher("/locobot/arm/end_path", PoseArray, queue_size=5)
@@ -86,7 +88,7 @@ class LocobotArm():
         rospy.Service("locobot/arm_config", SetFloat32, self.arm_config)
 
         ## for quick test
-        rospy.Service("/locobot/arm_sleep", SetBool, self.sleep_cb)
+        rospy.Service("/locobot/arm_sleep", SetBool, self.sleep)
 
     @property
     def end_pose(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -111,11 +113,28 @@ class LocobotArm():
     
     def reach(self, req:SetPoseRequest):
         """ reach goal popse with any path """
-        target_position, target_oritation = _pose_to_tuple(req.data)
-        success = self.move_end_to_pose(position=target_position, orientation=target_oritation, nonblocking=False)
+        print(">>>>>>>>>>>>>>>>>>>>")
         resp = SetPoseResponse()
-        resp.result = success
-        resp.message = "success" if success else "failed"
+        self.arm_group.stop()
+        self.arm_group.clear_pose_targets()
+        rospy.sleep(2)
+        self.arm_group.set_start_state_to_current_state()
+        self.arm_group.set_pose_target(req.data)
+        success, trajectory, plan_time, error_code = self.arm_group.plan()
+        print(f"plan_success: {success}, plan_time: {plan_time:.3f}, error_code: {error_code}")
+        if not success:
+            self.arm_group.stop()
+            self.arm_group.clear_pose_targets()
+            resp.result = False
+            resp.message = "Failed in Planning"
+        else:
+            ## Somehow, last failure in execution will stop execution this time.
+            ## therefore, call go() twice to make sure it to executes.
+            self.arm_group.go(wait=True)
+            self.arm_group.go(wait=True)
+            resp.result = True
+            resp.message = "Succeed"
+        print("<<<<<<<<<<<<<<<<<<<<\n")
         return resp
     
     def reach_c(self, req:SetPoseRequest):
@@ -160,45 +179,6 @@ class LocobotArm():
             return False
         print("Arm reached target!")
         return True
-
-    def move_end_to_pose(
-            self,
-            position: np.ndarray,
-            orientation: np.ndarray,
-            nonblocking=False
-    ) -> bool:
-        return self.move_end_to_poses([(position, orientation)], nonblocking)
-
-    def move_end_to_poses(
-            self,
-            target_poses: List[Tuple[np.ndarray, np.ndarray]],
-            nonblocking=False
-    ) -> bool:
-        self.arm_group.stop()
-        self.arm_group.clear_pose_targets()
-        self.arm_group.set_start_state_to_current_state()
-        self.arm_group.set_pose_targets([_tuple_to_pose(pose) for pose in target_poses])
-        print(f"Moving arm to {target_poses}")
-        start_time = rospy.get_time()
-        plan_success, trajectory, planning_time, error_code = self.arm_group.plan()
-        # print(trajectory)
-        if not plan_success:
-            print("Failed to move arm!")
-            self.arm_group.stop()
-            self.arm_group.clear_pose_targets()
-            return False
-        if nonblocking:
-            if self.arm_group.execute(trajectory, wait=False):
-                return True
-            else:
-                print("Async execution failed")
-                return False
-        else:
-            if not self.arm_group.execute(trajectory, wait=True):
-                print("Execution failed")
-                return False
-            print("Arm reached target!")
-            return True
 
     def vis_pose_array(self, poses):
         ## waypoints
@@ -281,39 +261,22 @@ class LocobotArm():
     def move_joints(
             self,
             target_joints: np.ndarray,
-            nonblocking=False
     ) -> bool:
+        self.arm_group.stop()
         self.arm_group.clear_pose_targets()
         self.arm_group.set_start_state_to_current_state()
         self.arm_group.set_joint_value_target(target_joints)
-        print(f"Moving arm to joints {target_joints}")
-        plan_success, trajectory, planning_time, error_code = self.arm_group.plan()
-        if not plan_success:
-            print("Failed to move arm!")
-            self.arm_group.stop()
-            return False
 
-        if nonblocking:
-            if self.arm_group.execute(trajectory, wait=False):
-                return True
-            else:
-                print("Async execution failed")
-                return False
-        else:
-            if not self.arm_group.execute(trajectory, wait=True):
-                print("Execution failed")
-                return False
-            print("Arm reached target!")
-            return True
+        self.arm_group.go(wait=True)
+        self.arm_group.go(wait=True)
+        # print(f"Move arm to joints {target_joints}")
     
-    def sleep_cb(self, msg:SetBoolRequest):
+    def sleep(self, msg:SetBoolRequest):
         if msg.data:
-            self.sleep()
+            self.move_joints(np.array([0.0, -1.1, 1.55, 0.0, 0.5, 0.0]))
             return SetBoolResponse(True, "locobot arm sleeped!")
         else:
             return SetBoolResponse(False, "Nothing to do.")
-    def sleep(self):
-        self.move_joints(np.array([0.0, -1.1, 1.55, 0.0, 0.5, 0.0]),nonblocking=False)
 
 if __name__ == "__main__":
     rospy.init_node("locobot_arm_moveit_test")
@@ -322,4 +285,4 @@ if __name__ == "__main__":
     # arm.move_end_to_pose(*p1)
     # arm.move_to_pose_with_cartesian(np.array([0.45, 0, 0.45]), np.array([0.0, 0.0, 0.0, 1.0]))
     # arm.sleep()
-    # rospy.spin()
+    rospy.spin()

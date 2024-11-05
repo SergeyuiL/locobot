@@ -174,6 +174,7 @@ class FBI:
         rospy.sleep(2)
         print("> resetting arm")
         self.arm_sleep(True)
+        rospy.sleep(2)
 
         ## step 2: grasp bowl
         print("----- grasping bowl -----")
@@ -232,7 +233,7 @@ class FBI:
         ## `goal` is in the same link with `depth`
         goal = self.filt_grps(grasps)
         self.goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
-        self.authenticate("Grasp")
+        self.authenticate("Pre-Grasp")
         self.gripper_ctl(False)
         ## wait a few seconds for coord_grasp published
         rospy.sleep(0.5)
@@ -244,15 +245,12 @@ class FBI:
         ## then move to grasp goal
         self.goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
         ee_goal = transform_pose(goal, self.coord_arm_base, self.coord_cam, self.tf_buf)
-        resp:SetPoseResponse = self.arm_ctl(ee_goal)
-        ## check
-        if not resp.result:
-            print(f"warning: failed to reach grasp goal, resp.message: {resp.message}")
-        #     self.quit(0)
+        self.authenticate("Grasp")
+        self.arm_ctl(ee_goal)
         rospy.sleep(1)
         self.gripper_ctl(True)
-        rospy.sleep(2)
-        print("finish grasping")
+        rospy.sleep(1)
+        print(f"finish grasping")
         return
     
     def authenticate(self, description:str=''):
@@ -260,7 +258,7 @@ class FBI:
         authenticate arm executation for goal pose (ask for 'enter' in terminal)
         user can check the goal pose ("locobot/grasp_goal", "TransformStamped") in rviz
         """
-        if (input(f"<Confirm '{description}' with Enter:>") != ""):
+        if (input(f"<Confirm '{description}' with Enter:>\n") != ""):
             print("aborted")
             self.quit(1)
         return
@@ -320,7 +318,7 @@ class FBI:
         
         boxes = np.array(resp.bounding_boxes, dtype=int).reshape((-1, 4)).tolist()
         print(boxes)
-        box = min([box for box in boxes if box[1] >= 50], key=lambda box:box[1])
+        box = min([box for box in boxes if box[1] >= 20], key=lambda box:box[1])
         idx = boxes.index(box)
         return masks[idx]
 

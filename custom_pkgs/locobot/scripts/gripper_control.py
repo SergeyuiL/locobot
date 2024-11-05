@@ -21,7 +21,7 @@ def initialize_gripper():
     gripper = InterbotixGripperXSInterface(
         core=dxl,
         gripper_name="gripper",
-        gripper_pressure=0.5,
+        gripper_pressure=1,
         gripper_pressure_lower_limit=150,
         gripper_pressure_upper_limit=350
     )
@@ -87,11 +87,11 @@ class Gripper:
     
     def close_gripper(self, req: SetBoolRequest):
         if req.data:
-            rospy.loginfo("close gripper ...")
+            # rospy.loginfo("close gripper ...")
             self.close()
             return SetBoolResponse(True, "closed girpper")
         else:
-            rospy.loginfo("open gripper ...")
+            # rospy.loginfo("open gripper ...")
             self.open()
             return SetBoolResponse(True, "opened gripper")
         
