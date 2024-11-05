@@ -163,34 +163,30 @@ class FBI:
         print("----- grasping handle -----")
         mask = self.get_mask("handle")
         self.grasp(mask)
-
         print("> pulling handle")
         self.chassis_vel.publish(Twist(linear=Vector3(x=-0.12)))
         rospy.sleep(2)
         self.gripper_ctl(False)
-
         print("> turning left")
         self.chassis_vel.publish(Twist(angular=Vector3(z=1.2)))
         rospy.sleep(2)
         print("> resetting arm")
         self.arm_sleep(True)
-        rospy.sleep(2)
 
         ## step 2: grasp bowl
         print("----- grasping bowl -----")
         mask = self.get_mask("bowl")
         self.grasp(mask)
-        
         print("> holding and rotating")
         self.arm_ctl(Pose(position=self.ARM_PT1, orientation=Quaternion(w=1.0)))
-        self.chassis_vel.publish(Twist(angular=Vector3(z=-1.45)))
+        self.chassis_vel.publish(Twist(angular=Vector3(z=-1.4)))
         rospy.sleep(1.5)
-        self.chassis_vel.publish(Twist(linear=Vector3(x=0.1)))
+        self.chassis_vel.publish(Twist(linear=Vector3(x=0.12)))
         rospy.sleep(1.5)
 
         print("> placing obj")
         self.arm_ctl(Pose(position=self.ARM_PT2, orientation=Quaternion(w=1.0)))
-        rospy.sleep(3)
+        rospy.sleep(2)
         self.gripper_ctl(False)
 
         print("> resetting arm and grasp handle")
@@ -204,7 +200,7 @@ class FBI:
         self.grasp(mask)
         ## push
         self.authenticate("Move")
-        self.chassis_vel.publish(Twist(linear=Vector3(x=0.13)))
+        self.chassis_vel.publish(Twist(linear=Vector3(x=0.15)))
         ## open gripper
         self.gripper_ctl(False)
         rospy.sleep(2)
@@ -219,35 +215,38 @@ class FBI:
         rgb = deepcopy(self.img_rgb)
         cld = deepcopy(self.cld)
 
-        # print("sending grasp infer request")
         msg = GraspInferRequest(
             mask = self.bridge.cv2_to_imgmsg(mask, encoding="mono8"),
             cloud = self.create_pc2_msg(cld, rgb)
         )
-        # print("generating grasps from GraspNet service")
+        t0 = rospy.Time.now()
         resp:GraspInferResponse = self.grasp_det(msg)
         grasps = resp.pose
         if not resp.result or not len(grasps):
             return
-        # print("grasps generated")
+        print(f"grasps generated ({(rospy.Time.now() - t0).to_sec():.1f} sec)")
         ## `goal` is in the same link with `depth`
         goal = self.filt_grps(grasps)
         self.goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
-        self.authenticate("Pre-Grasp")
         self.gripper_ctl(False)
         ## wait a few seconds for coord_grasp published
         rospy.sleep(0.5)
         ## first move to the front of grasp
+        print("Pre-Grasp")
+        self.authenticate("Pre-Grasp")
         t = transform_vec(Vector3(x=-0.1, y=0, z=0), self.coord_map, self.coord_grasp, self.tf_buf)
         self.goal = translate(self.goal, t) 
         ee_goal = transform_pose(self.goal, self.coord_arm_base, self.coord_map, self.tf_buf)
         self.arm_ctl(ee_goal)
+        print("Pre-Grasp done")
         ## then move to grasp goal
+        print("Grasp")
+        self.authenticate("Grasp")
         self.goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
         ee_goal = transform_pose(goal, self.coord_arm_base, self.coord_cam, self.tf_buf)
-        self.authenticate("Grasp")
         self.arm_ctl(ee_goal)
         rospy.sleep(1)
+        print("Grasp done")
         self.gripper_ctl(True)
         rospy.sleep(1)
         print(f"finish grasping")
@@ -258,9 +257,9 @@ class FBI:
         authenticate arm executation for goal pose (ask for 'enter' in terminal)
         user can check the goal pose ("locobot/grasp_goal", "TransformStamped") in rviz
         """
-        if (input(f"<Confirm '{description}' with Enter:>\n") != ""):
-            print("aborted")
-            self.quit(1)
+        # if (input(f"<Confirm '{description}' with Enter:>\n") != ""):
+        #     print("aborted")
+        #     self.quit(1)
         return
 
     def approach(self, goal:Pose):

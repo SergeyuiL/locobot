@@ -117,7 +117,6 @@ class LocobotArm():
         resp = SetPoseResponse()
         self.arm_group.stop()
         self.arm_group.clear_pose_targets()
-        rospy.sleep(2)
         self.arm_group.set_start_state_to_current_state()
         self.arm_group.set_pose_target(req.data)
         success, trajectory, plan_time, error_code = self.arm_group.plan()
@@ -128,10 +127,7 @@ class LocobotArm():
             resp.result = False
             resp.message = "Failed in Planning"
         else:
-            ## Somehow, last failure in execution will stop execution this time.
-            ## therefore, call go() twice to make sure it to executes.
-            self.arm_group.go(wait=True)
-            self.arm_group.go(wait=True)
+            self.arm_group.execute(trajectory)
             resp.result = True
             resp.message = "Succeed"
         print("<<<<<<<<<<<<<<<<<<<<\n")
@@ -267,7 +263,6 @@ class LocobotArm():
         self.arm_group.set_start_state_to_current_state()
         self.arm_group.set_joint_value_target(target_joints)
 
-        self.arm_group.go(wait=True)
         self.arm_group.go(wait=True)
         # print(f"Move arm to joints {target_joints}")
     
