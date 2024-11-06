@@ -213,7 +213,7 @@ class FBI:
         self.quit(0)
         return 
     
-    def grasp(self, mask, pregrasp=False):
+    def grasp(self, mask, pregrasp=True):
         """ grasp given object defined by `mask` """
         rgb = deepcopy(self.img_rgb)
         cld = deepcopy(self.cld)
@@ -231,25 +231,24 @@ class FBI:
         ## `goal` is in the same link with `depth`
         goal = self.filt_grps(grasps)
         self.goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
-        rospy.sleep(0.5)
         self.gripper_ctl(False)
-        ## wait a few seconds for coord_grasp published
+
+        ee_goal_list = []
         if pregrasp:
-            ## first move to the front of grasp
-            print("Pre-Grasp")
-            self.authenticate("Pre-Grasp")
+            ## append pre-grasp
+            rospy.sleep(0.5) # wait a few seconds for coord_grasp published
             t = transform_vec(Vector3(x=-0.1, y=0, z=0), self.coord_map, self.coord_grasp, self.tf_buf)
             self.goal = translate(self.goal, t) 
             ee_goal = transform_pose(self.goal, self.coord_arm_base, self.coord_map, self.tf_buf)
-            self.arm_ctl(ee_goal)
-            print("Pre-Grasp done")
-            rospy.sleep(2)
-        ## then move to grasp goal
-        print("Grasp")
-        self.authenticate("Grasp")
+            ee_goal_list.append(ee_goal)
+            print("append pre-grasp")
+        ## append grasp
         self.goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
         ee_goal = transform_pose(goal, self.coord_arm_base, self.coord_cam, self.tf_buf)
-        self.arm_ctl(ee_goal)
+        ee_goal_list.append(ee_goal)
+        print("append grasp")
+
+        self.arm.move_to_poses(ee_goal_list)
         rospy.sleep(1)
         print("Grasp done")
         self.gripper_ctl(True)
