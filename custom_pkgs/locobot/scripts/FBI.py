@@ -23,6 +23,8 @@ from std_msgs.msg import Header
 from geometry_msgs.msg import TransformStamped, Pose, PoseStamped, Point, Vector3Stamped, Vector3, PoseArray, Quaternion, Twist
 import tf2_geometry_msgs
 
+from arm_control import LocobotArm
+
 
 def Point2Vector(p: Point):
     v = Vector3() 
@@ -124,6 +126,7 @@ class FBI:
         self.tf_pub = tf2_ros.TransformBroadcaster()
     
     def init_caller(self):
+        self.arm = LocobotArm()
         ## actuation API
         self.arm_ctl = rospy.ServiceProxy('/locobot/arm_control', SetPose)
         self.arm_sleep = rospy.ServiceProxy('/locobot/arm_sleep', SetBool)
@@ -176,7 +179,7 @@ class FBI:
         ## step 2: grasp bowl
         print("----- grasping bowl -----")
         mask = self.get_mask("bowl")
-        self.grasp(mask)
+        self.grasp(mask, pregrasp=True)
         print("> holding and rotating")
         self.arm_ctl(Pose(position=self.ARM_PT1, orientation=Quaternion(w=1.0)))
         self.chassis_vel.publish(Twist(angular=Vector3(z=-1.4)))
@@ -200,17 +203,17 @@ class FBI:
         self.grasp(mask)
         ## push
         self.authenticate("Move")
-        self.chassis_vel.publish(Twist(linear=Vector3(x=0.15)))
+        self.chassis_vel.publish(Twist(linear=Vector3(x=0.14)))
         ## open gripper
         self.gripper_ctl(False)
-        rospy.sleep(2)
+        rospy.sleep(1)
         ## back and reset arm
         self.chassis_vel.publish(Twist(linear=Vector3(x=-0.08)))
         self.arm_sleep(True)
         self.quit(0)
         return 
     
-    def grasp(self, mask):
+    def grasp(self, mask, pregrasp=False):
         """ grasp given object defined by `mask` """
         rgb = deepcopy(self.img_rgb)
         cld = deepcopy(self.cld)
@@ -228,17 +231,19 @@ class FBI:
         ## `goal` is in the same link with `depth`
         goal = self.filt_grps(grasps)
         self.goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
+        rospy.sleep(0.5)
         self.gripper_ctl(False)
         ## wait a few seconds for coord_grasp published
-        rospy.sleep(0.5)
-        ## first move to the front of grasp
-        print("Pre-Grasp")
-        self.authenticate("Pre-Grasp")
-        t = transform_vec(Vector3(x=-0.1, y=0, z=0), self.coord_map, self.coord_grasp, self.tf_buf)
-        self.goal = translate(self.goal, t) 
-        ee_goal = transform_pose(self.goal, self.coord_arm_base, self.coord_map, self.tf_buf)
-        self.arm_ctl(ee_goal)
-        print("Pre-Grasp done")
+        if pregrasp:
+            ## first move to the front of grasp
+            print("Pre-Grasp")
+            self.authenticate("Pre-Grasp")
+            t = transform_vec(Vector3(x=-0.1, y=0, z=0), self.coord_map, self.coord_grasp, self.tf_buf)
+            self.goal = translate(self.goal, t) 
+            ee_goal = transform_pose(self.goal, self.coord_arm_base, self.coord_map, self.tf_buf)
+            self.arm_ctl(ee_goal)
+            print("Pre-Grasp done")
+            rospy.sleep(2)
         ## then move to grasp goal
         print("Grasp")
         self.authenticate("Grasp")

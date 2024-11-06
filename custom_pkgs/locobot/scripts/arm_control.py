@@ -7,6 +7,7 @@ from geometry_msgs.msg import Pose, Point, Quaternion, PoseArray, TransformStamp
 from geometry_msgs.msg import PoseStamped, Pose
 from moveit_msgs.msg import RobotTrajectory, RobotState
 from sensor_msgs.msg import JointState
+from trajectory_msgs.msg import JointTrajectoryPoint
 import numpy as np
 import rospy
 from tf2_ros import Buffer, TransformListener
@@ -71,7 +72,6 @@ class LocobotArm():
         self.robot, self.scene, self.arm_group = initialize_moveit()
         self.arm_group.set_max_acceleration_scaling_factor(0.5)
         self.arm_group.set_max_velocity_scaling_factor(0.5)
-        # initialize_motor_pids()
 
         self.arm_path_pub = rospy.Publisher("/locobot/arm/end_path", PoseArray, queue_size=5)
 
@@ -141,6 +141,49 @@ class LocobotArm():
         resp.result = success
         resp.message = "success" if success else "failed"
         return resp
+
+    def print_traj(self, traj):
+        for pnt in traj.joint_trajectory.points:
+            pnt: JointTrajectoryPoint
+            print(f'(time) {pnt.time_from_start.to_sec():.4f}\t(joints_value) ', end="")
+            for i in pnt.positions:
+                print(f"{i:.4f}, ", end="")
+            print()
+        return
+
+    def move_to_poses(self, poses):
+        self.arm_group.stop()
+        self.arm_group.clear_pose_targets()
+        stat0 = self.arm_group.get_current_state()
+        trajs = []
+        for i, pose in enumerate(poses):
+            self.arm_group.set_start_state(stat0)
+            self.arm_group.set_pose_target(pose)
+            succ, traj, _, _ = self.arm_group.plan()
+            traj:RobotTrajectory
+            print(f"{i}->{i+1}: {'success' if succ else 'fail'}")
+            if not succ:
+                return False
+            self.print_traj(traj)
+            trajs.append(traj)
+            tmp = list(stat0.joint_state.position)
+            tmp[2:8] = traj.joint_trajectory.points[-1].positions
+            stat0.joint_state.position = tmp
+        ## concatenate trajectories
+        traj_concat = RobotTrajectory()
+        traj_concat.joint_trajectory.joint_names = trajs[0].joint_trajectory.joint_names
+        traj_concat.joint_trajectory.points = trajs[0].joint_trajectory.points
+        for traj in trajs[1:]:
+            traj_concat.joint_trajectory.points += traj.joint_trajectory.points[1:]
+        traj_retime = self.arm_group.retime_trajectory(
+            ref_state_in=self.arm_group.get_current_state(),
+            traj_in=traj_concat,
+            velocity_scaling_factor=0.5,
+            acceleration_scaling_factor=0.5,
+        )
+        print("retimed traj:")
+        self.print_traj(traj_retime)
+        return self.arm_group.execute(traj_retime)
 
     def arm_config(self, req:SetFloat32Request):
         factor = req.data
@@ -276,8 +319,16 @@ class LocobotArm():
 if __name__ == "__main__":
     rospy.init_node("locobot_arm_moveit_test")
     arm = LocobotArm()
-    # p1 = (np.array([0.5, -0.14, 0.15]), np.array([0.0, 0.0, 0.0, 1.0]))
-    # arm.move_end_to_pose(*p1)
-    # arm.move_to_pose_with_cartesian(np.array([0.45, 0, 0.45]), np.array([0.0, 0.0, 0.0, 1.0]))
-    # arm.sleep()
+    p1 = Pose(
+        position=Point(x=0.35, y=0, z=0.5),
+        orientation=Quaternion(x=0, y=0, z=0, w=1),
+    )
+    p2 = Pose(
+        position=Point(x=0.4, y=0, z=0.4),
+        orientation=Quaternion(x=0, y=0, z=0, w=1),
+    )
+    # import os
+    # os.system('rosservice call /locobot/arm_control "data: {position: {x: 0.35, y: 0.0, z: 0.5}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}"')
+    # os.system('rosservice call /locobot/arm_control "data: {position: {x: 0.4, y: 0.0, z: 0.4}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}"')
+    arm.move_to_poses([p1, p2])
     rospy.spin()
