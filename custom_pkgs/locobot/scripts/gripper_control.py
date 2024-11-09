@@ -10,6 +10,8 @@ from interbotix_xs_msgs.srv import RegisterValues, RegisterValuesRequest
 from std_msgs.msg import String
 from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
 
+import threading
+
 def initialize_gripper():
     dxl = InterbotixRobotXSCore(
         robot_model="wx250s",
@@ -74,11 +76,11 @@ def initialize_motor_pids():
 class Gripper:
     """ publish gripper state (close or not) and provide service to control gripper """
     def __init__(self):
-        print("-------------init moto pids---------------")
+        print("---------------init moto pids---------------")
         initialize_motor_pids()
         print("----------------init gripper----------------")
         self.dxl, self.gripper_impl = initialize_gripper()
-        print("---------------------complete init---------------------")
+        print("----------arm and gripper init done---------")
         self.gripper_state = "close"
         self.close()
         self.gripper_state_pub = rospy.Publisher("/locobot/gripper_state", String, queue_size=20)

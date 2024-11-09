@@ -161,6 +161,7 @@ class FBI:
         # ## TODO: change to detection-based method instead of hard coding here
         # self.chassis_ctl(Pose(position=self.CHAS_PT1, orientation=Quaternion(w=1.0)))
         # self.chassis_ctl(Pose(position=self.CHAS_PT2), orientation=Quaternion(w=1.0)))
+        self.arm_sleep(True)
 
         ## step 1: grasp handle
         print("----- grasping handle -----")

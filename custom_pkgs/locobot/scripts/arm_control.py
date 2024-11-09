@@ -75,7 +75,6 @@ class LocobotArm():
 
         self.arm_path_pub = rospy.Publisher("/locobot/arm/end_path", PoseArray, queue_size=5)
 
-        self.jnt_stats = rospy.wait_for_message("/locobot/joint_states", JointState)   # current joint states
         self.jnt_stats_sub = rospy.Subscriber("/locobot/joint_states", JointState, self.on_jnt_stats)
         self.tf_buffer.lookup_transform("locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time(), rospy.Duration(5.0))
 
@@ -317,7 +316,7 @@ class LocobotArm():
             return SetBoolResponse(False, "Nothing to do.")
 
 if __name__ == "__main__":
-    rospy.init_node("locobot_arm_moveit_test")
+    rospy.init_node("arm_controller")
     arm = LocobotArm()
     p1 = Pose(
         position=Point(x=0.35, y=0, z=0.5),
