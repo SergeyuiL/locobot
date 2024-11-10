@@ -36,6 +36,7 @@ add_service_files(
   SetFloat32.srv
   SetPose.srv
   SetPose2D.srv
+  SetPoseArray.srv
 )
 
 generate_messages(

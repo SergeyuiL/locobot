@@ -20,6 +20,7 @@ from geometry_msgs.msg import PoseStamped, Pose
 from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
 from locobot.srv import SetPose, SetPoseRequest, SetPoseResponse
 from locobot.srv import SetFloat32, SetFloat32Request, SetFloat32Response
+from locobot.srv import SetPoseArray, SetPoseArrayRequest, SetPoseArrayResponse
 
 def _tuple_to_pose(pose_tuple: Tuple[np.ndarray, np.ndarray]) -> Pose:
     return Pose(
@@ -78,8 +79,8 @@ class LocobotArm():
         self.jnt_stats_sub = rospy.Subscriber("/locobot/joint_states", JointState, self.on_jnt_stats)
         self.tf_buffer.lookup_transform("locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time(), rospy.Duration(5.0))
 
-        ## reach goal pose (with any path)
-        rospy.Service("/locobot/arm_control", SetPose, self.reach)
+        ## reach goal poses (with any path)
+        rospy.Service("/locobot/arm_control", SetPoseArray, self.reach)
         
         ## reach goal pose with cartesian path
         rospy.Service("locobot/arm_control_cartesian", SetPose, self.reach_c)
@@ -110,28 +111,6 @@ class LocobotArm():
             for joint_name in self.jnts_name
         ])
     
-    def reach(self, req:SetPoseRequest):
-        """ reach goal popse with any path """
-        print(">>>>>>>>>>>>>>>>>>>>")
-        resp = SetPoseResponse()
-        self.arm_group.stop()
-        self.arm_group.clear_pose_targets()
-        self.arm_group.set_start_state_to_current_state()
-        self.arm_group.set_pose_target(req.data)
-        success, trajectory, plan_time, error_code = self.arm_group.plan()
-        print(f"plan_success: {success}, plan_time: {plan_time:.3f}, error_code: {error_code}")
-        if not success:
-            self.arm_group.stop()
-            self.arm_group.clear_pose_targets()
-            resp.result = False
-            resp.message = "Failed in Planning"
-        else:
-            self.arm_group.execute(trajectory)
-            resp.result = True
-            resp.message = "Succeed"
-        print("<<<<<<<<<<<<<<<<<<<<\n")
-        return resp
-    
     def reach_c(self, req:SetPoseRequest):
         """ reach goal pose with cartesian path """
         target_position, target_oritation = _pose_to_tuple(req.data)
@@ -139,6 +118,14 @@ class LocobotArm():
         resp = SetPoseResponse()
         resp.result = success
         resp.message = "success" if success else "failed"
+        return resp
+
+    def reach(self, req:SetPoseArrayRequest):
+        """ reach given waypoints in order """
+        errcode = self.move_to_poses(req.data)
+        resp = SetPoseArrayResponse()
+        resp.result = errcode == 0
+        resp.message = "success" if errcode == 0 else ("plan failed" if errcode == 1 else "execution failed")
         return resp
 
     def print_traj(self, traj):
@@ -151,6 +138,12 @@ class LocobotArm():
         return
 
     def move_to_poses(self, poses):
+        """ 
+        `poses`: list of Pose;
+        return:
+        `errcode`:
+            0: success; 1: plan failed; 2: execution failed (just ignore it for now)
+        """
         self.arm_group.stop()
         self.arm_group.clear_pose_targets()
         stat0 = self.arm_group.get_current_state()
@@ -162,7 +155,7 @@ class LocobotArm():
             traj:RobotTrajectory
             print(f"{i}->{i+1}: {'success' if succ else 'fail'}")
             if not succ:
-                return False
+                return 1
             self.print_traj(traj)
             trajs.append(traj)
             tmp = list(stat0.joint_state.position)
@@ -182,7 +175,7 @@ class LocobotArm():
         )
         print("retimed traj:")
         self.print_traj(traj_retime)
-        return self.arm_group.execute(traj_retime)
+        return 0 if self.arm_group.execute(traj_retime) else 2
 
     def arm_config(self, req:SetFloat32Request):
         factor = req.data

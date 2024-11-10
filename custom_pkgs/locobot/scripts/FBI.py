@@ -10,6 +10,7 @@ import rospy
 from cv_bridge import CvBridge
 
 from locobot.srv import SetPose, SetPoseRequest, SetPoseResponse
+from locobot.srv import SetPoseArray, SetPoseArrayRequest, SetPoseArrayResponse
 from locobot.srv import SetFloat32, SetFloat32Request, SetFloat32Response
 from perception_service.srv import Sam2Gpt4Infer, Sam2Gpt4InferRequest, Sam2Gpt4InferResponse
 from perception_service.srv import GraspInfer, GraspInferRequest, GraspInferResponse
@@ -126,9 +127,8 @@ class FBI:
         self.tf_pub = tf2_ros.TransformBroadcaster()
     
     def init_caller(self):
-        self.arm = LocobotArm()
         ## actuation API
-        self.arm_ctl = rospy.ServiceProxy('/locobot/arm_control', SetPose)
+        self.arm_ctl = rospy.ServiceProxy('/locobot/arm_control', SetPoseArray)
         self.arm_sleep = rospy.ServiceProxy('/locobot/arm_sleep', SetBool)
         self.chassis_ctl = rospy.ServiceProxy('/locobot/chassis_control', SetPose)
         self.gripper_ctl = rospy.ServiceProxy('/locobot/gripper_control', SetBool)
@@ -182,14 +182,18 @@ class FBI:
         mask = self.get_mask("bowl")
         self.grasp(mask, pregrasp=True)
         print("> holding and rotating")
-        self.arm_ctl(Pose(position=self.ARM_PT1, orientation=Quaternion(w=1.0)))
+        self.arm_ctl([
+            Pose(position=self.ARM_PT1, orientation=Quaternion(w=1.0))
+        ])
         self.chassis_vel.publish(Twist(angular=Vector3(z=-1.4)))
         rospy.sleep(1.5)
         self.chassis_vel.publish(Twist(linear=Vector3(x=0.12)))
         rospy.sleep(1.5)
 
         print("> placing obj")
-        self.arm_ctl(Pose(position=self.ARM_PT2, orientation=Quaternion(w=1.0)))
+        self.arm_ctl([
+            Pose(position=self.ARM_PT2, orientation=Quaternion(w=1.0))
+        ])
         rospy.sleep(2)
         self.gripper_ctl(False)
 
@@ -198,13 +202,15 @@ class FBI:
         self.chassis_vel.publish(Twist(linear=Vector3(x=-0.14)))
         ## reset arm
         self.arm_sleep(True)
+        rospy.sleep(1.5)
         ## grasp handle again
         print("----- grasping handle -----")
         mask = self.get_mask("handle")
         self.grasp(mask)
         ## push
         self.authenticate("Move")
-        self.chassis_vel.publish(Twist(linear=Vector3(x=0.14)))
+        self.chassis_vel.publish(Twist(linear=Vector3(x=0.12)))
+        rospy.sleep(1.5)
         ## open gripper
         self.gripper_ctl(False)
         rospy.sleep(1)
@@ -249,7 +255,7 @@ class FBI:
         ee_goal_list.append(ee_goal)
         print("append grasp")
 
-        self.arm.move_to_poses(ee_goal_list)
+        self.arm_ctl(ee_goal_list)
         rospy.sleep(1)
         print("Grasp done")
         self.gripper_ctl(True)
