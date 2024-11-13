@@ -177,15 +177,17 @@ class FBI:
         print("> resetting arm")
         self.arm_sleep(True)
 
+        rospy.sleep(1.5)
+
         ## step 2: grasp bowl
         print("----- grasping bowl -----")
         mask = self.get_mask("bowl")
-        self.grasp(mask, pregrasp=True)
+        self.grasp(mask, stop_between=True)
         print("> holding and rotating")
         self.arm_ctl([
             Pose(position=self.ARM_PT1, orientation=Quaternion(w=1.0))
         ])
-        self.chassis_vel.publish(Twist(angular=Vector3(z=-1.4)))
+        self.chassis_vel.publish(Twist(angular=Vector3(z=-1.45)))
         rospy.sleep(1.5)
         self.chassis_vel.publish(Twist(linear=Vector3(x=0.12)))
         rospy.sleep(1.5)
@@ -220,7 +222,7 @@ class FBI:
         self.quit(0)
         return 
     
-    def grasp(self, mask, pregrasp=True):
+    def grasp(self, mask, stop_between=False):
         """ grasp given object defined by `mask` """
         rgb = deepcopy(self.img_rgb)
         cld = deepcopy(self.cld)
@@ -241,21 +243,26 @@ class FBI:
         self.gripper_ctl(False)
 
         ee_goal_list = []
-        if pregrasp:
-            ## append pre-grasp
-            rospy.sleep(0.5) # wait a few seconds for coord_grasp published
-            t = transform_vec(Vector3(x=-0.1, y=0, z=0), self.coord_map, self.coord_grasp, self.tf_buf)
-            self.goal = translate(self.goal, t) 
-            ee_goal = transform_pose(self.goal, self.coord_arm_base, self.coord_map, self.tf_buf)
-            ee_goal_list.append(ee_goal)
-            print("append pre-grasp")
+        ## append pre-grasp
+        rospy.sleep(0.5) # wait a few seconds for coord_grasp published
+        t = transform_vec(Vector3(x=-0.1, y=0, z=0), self.coord_map, self.coord_grasp, self.tf_buf)
+        self.goal = translate(self.goal, t) 
+        ee_goal = transform_pose(self.goal, self.coord_arm_base, self.coord_map, self.tf_buf)
+        ee_goal_list.append(ee_goal)
+        print("append pre-grasp")
         ## append grasp
         self.goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
         ee_goal = transform_pose(goal, self.coord_arm_base, self.coord_cam, self.tf_buf)
         ee_goal_list.append(ee_goal)
         print("append grasp")
 
-        self.arm_ctl(ee_goal_list)
+        if stop_between:
+            self.arm_ctl([ee_goal_list[0]])
+            for ee_goal in ee_goal_list[1:]:
+                rospy.sleep(1.5)
+                self.arm_ctl([ee_goal])
+        else:
+            self.arm_ctl(ee_goal_list)
         rospy.sleep(1)
         print("Grasp done")
         self.gripper_ctl(True)
