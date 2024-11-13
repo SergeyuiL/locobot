@@ -65,7 +65,7 @@ class LocobotArm():
     """ provide services to control the locobot arm (plan, plan cartesian and sleep) """
     jnts_name = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
 
-    def __init__(self) -> None:
+    def __init__(self, serving=True) -> None:
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer)
@@ -79,16 +79,15 @@ class LocobotArm():
         self.jnt_stats_sub = rospy.Subscriber("/locobot/joint_states", JointState, self.on_jnt_stats)
         self.tf_buffer.lookup_transform("locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time(), rospy.Duration(5.0))
 
-        ## reach goal poses (with any path)
-        rospy.Service("/locobot/arm_control", SetPoseArray, self.reach)
-        
-        ## reach goal pose with cartesian path
-        rospy.Service("locobot/arm_control_cartesian", SetPose, self.reach_c)
-
-        rospy.Service("locobot/arm_config", SetFloat32, self.arm_config)
-
-        ## for quick test
-        rospy.Service("/locobot/arm_sleep", SetBool, self.sleep)
+        if serving: 
+            ## reach goal poses (with any path)
+            rospy.Service("/locobot/arm_control", SetPoseArray, self.reach)
+            ## reach goal pose with cartesian path
+            rospy.Service("locobot/arm_control_cartesian", SetPose, self.reach_c)
+            ## config arm velocity and acceleration (scaling factor)
+            rospy.Service("locobot/arm_config", SetFloat32, self.arm_config)
+            ## for quick test
+            rospy.Service("/locobot/arm_sleep", SetBool, self.sleep)
 
     @property
     def end_pose(self) -> Tuple[np.ndarray, np.ndarray]:

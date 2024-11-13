@@ -9,19 +9,21 @@ import threading
 
 class Chassis:
     """ provide services to control the chassis """
-    def __init__(self):
+    def __init__(self, serving=True):
         ## publish chassis goal
         self.pub_goal = rospy.Publisher("/locobot/move_base_simple/goal", PoseStamped, queue_size=10)
         ## publish chassis current 2D pose
         self.pub_curr = rospy.Publisher("/locobot/chassis/current_pose", Pose2D, queue_size=10)
         rospy.Subscriber("/locobot/move_base/result", MoveBaseActionResult, self.on_status)
-        rospy.Service("/locobot/chassis_control", SetPose2D, self.on_chassis_control)
+        if serving:
+            rospy.Service("/locobot/chassis_control", SetPose2D, self.on_chassis_control)
 
         self.tf_buf = tf2_ros.Buffer()
         self.tf_lstn = tf2_ros.TransformListener(self.tf_buf)
 
         self.pub_thr = threading.Thread(target=self.publish_pose)
         self.pub_thr.start()
+    
     
     def on_chassis_control(self, req:SetPose2DRequest):
         self.reached = False
@@ -70,5 +72,5 @@ class Chassis:
 
 if __name__ == '__main__':
     rospy.init_node("chassis_controller")
-    chas = Chassis()
+    chas = Chassis(serving=True)
     rospy.spin()

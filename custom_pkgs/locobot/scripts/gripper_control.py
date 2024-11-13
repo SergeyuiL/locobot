@@ -75,7 +75,7 @@ def initialize_motor_pids():
 
 class Gripper:
     """ publish gripper state (close or not) and provide service to control gripper """
-    def __init__(self):
+    def __init__(self, serving=True):
         print("---------------init moto pids---------------")
         initialize_motor_pids()
         print("----------------init gripper----------------")
@@ -85,7 +85,8 @@ class Gripper:
         self.close()
         self.gripper_state_pub = rospy.Publisher("/locobot/gripper_state", String, queue_size=20)
         # self.gripper_contorl_sub = rospy.Subscriber("/locobot/gripper_control", String, self.control_callback)
-        self.gripper_service = rospy.Service("/locobot/gripper_control", SetBool, self.close_gripper)
+        if serving:
+            self.gripper_service = rospy.Service("/locobot/gripper_control", SetBool, self.close_gripper)
     
     def close_gripper(self, req: SetBoolRequest):
         if req.data:
