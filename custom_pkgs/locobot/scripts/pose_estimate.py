@@ -5,6 +5,7 @@ import os
 import cv2
 import threading
 from copy import deepcopy
+import matplotlib.pyplot as plt
 
 try:
     import rospy
@@ -123,7 +124,7 @@ class ModelLib:
         while not self.tf_buf.can_transform(
             self.coord_map, self.coord_cam, rospy.Time(0)
         ):
-            print ("waiting for tf")
+            print("waiting for tf")
             rospy.sleep(0.1)
         trans = self.tf_buf.lookup_transform(
             self.coord_map, self.coord_cam, rospy.Time(0)
@@ -158,6 +159,57 @@ class ModelLib:
             )
 
 
+from lightglue import LightGlue, SuperPoint, DISK, SIFT, DoGHardNet, ALIKED
+from lightglue.utils import load_image, rbd, numpy_image_to_torch, match_pair
+from lightglue import viz2d
+import torch
+
+torch.set_grad_enabled(False)
+
+
+class PoseEstimator:
+    extractor = SuperPoint(max_num_keypoints=1024).eval()
+    matcher = LightGlue(features="superpoint").eval()
+
+    @staticmethod
+    def match(rgb_src, cld_src, rgbs_dst: np.ndarray, clds_dst):
+        """Match rgb_src and rgb_dst, and solve pose from 3d correspondance
+        rgb_src: (H1, W1, 3)
+        cld_src: (H1, W1, 3)
+        rgbs_dst: (N, H2, W2, 3)
+        clds_dst: (N, H2, W2, 3)
+        """
+        assert len(rgbs_dst.shape) == 4
+        N = rgbs_dst.shape[0]
+        image0 = numpy_image_to_torch(rgb_src)
+        feats0 = PoseEstimator.extractor.extract(image0)
+        for i in range(N):
+            print(f"matching No. {i} image")
+            image1 = numpy_image_to_torch(rgbs_dst[i])
+            feats1 = PoseEstimator.extractor.extract(image1)
+            matches01 = PoseEstimator.matcher({"image0": feats0, "image1": feats1})
+            feats1, matches01 = rbd(feats1), rbd(matches01)
+            kpts0, kpts1, matches = (
+                rbd(feats0)["keypoints"],
+                feats1["keypoints"],
+                matches01["matches"],
+            )
+            m_kpts0, m_kpts1 = (
+                kpts0[matches[..., 0]],
+                kpts1[matches[..., 1]],
+            )
+
+            axes = viz2d.plot_images([image0, image1])
+            viz2d.plot_matches(m_kpts0, m_kpts1, color="lime", lw=0.2)
+            viz2d.add_text(0, f'Stop after {matches01["stop"]} layers')
+
+            kpc0 = viz2d.cm_prune(matches01["prune0"])
+            kpc1 = viz2d.cm_prune(matches01["prune1"])
+            viz2d.plot_images([image0, image1])
+            viz2d.plot_keypoints([kpts0, kpts1], colors=[kpc0, kpc1], ps=6)
+            plt.show()
+
+
 if __name__ == "__main__":
     ml = ModelLib(load_only=False)
     cam_in = ml.cam_intrin
@@ -168,6 +220,8 @@ if __name__ == "__main__":
     R = tf.transformations.quaternion_matrix(pose[1])[:3, :3]
     t = np.array(pose[0])
     cld = cld @ R.T + t  # (h, w, 3)
+
+    PoseEstimator.match(rgb, cld, imgs_rgb, clds)
 
     # feature extraction
     detector = cv2.SIFT_create()
@@ -185,7 +239,7 @@ if __name__ == "__main__":
         res = flann.knnMatch(des1, des2, k=2)
         # Lowe distance ratio test, default threshold is 0.7
         matches = []
-        for (m, n) in res:
+        for m, n in res:
             if m.distance < 0.7 * n.distance:
                 matches.append(m)
 
@@ -194,7 +248,9 @@ if __name__ == "__main__":
 
         cld1 = cld[pixs1[:, 1], pixs1[:, 0]]
         cld2 = clds[i][pixs2[:, 1], pixs2[:, 0]]
-        depth_avail = (np.linalg.norm(cld1, axis=1) > 1e-3) & (np.linalg.norm(cld2, axis=1) > 1e-3)
+        depth_avail = (np.linalg.norm(cld1, axis=1) > 1e-3) & (
+            np.linalg.norm(cld2, axis=1) > 1e-3
+        )
         print(f"filt out {sum(1-depth_avail)}")
         matches = [matches[i] for i in range(len(matches)) if depth_avail[i]]
 
@@ -207,7 +263,7 @@ if __name__ == "__main__":
         src_pts.append(cld1[depth_avail])
         dst_pts.append(cld2[depth_avail])
 
-    src_pixs = np.concatenate(src_pixs, axis=0) # (L, 2)
+    src_pixs = np.concatenate(src_pixs, axis=0)  # (L, 2)
     src_pts = np.concatenate(src_pts, axis=0)  # (L, 3)
     dst_pts = np.concatenate(dst_pts, axis=0)  # (L, 3)
     # registration with o3d
@@ -221,7 +277,7 @@ if __name__ == "__main__":
     result = o3d.pipelines.registration.registration_ransac_based_on_correspondence(
         src, dst, corres, 10
     )
-    print('----------3d match---------')
+    print("----------3d match---------")
     print(result.transformation)
 
     # transform cld with the result.transformation
