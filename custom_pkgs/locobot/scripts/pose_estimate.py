@@ -6,6 +6,7 @@ import cv2
 import threading
 from copy import deepcopy
 import matplotlib.pyplot as plt
+import time
 
 try:
     import rospy
@@ -168,26 +169,27 @@ torch.set_grad_enabled(False)
 
 
 class PoseEstimator:
-    extractor = SuperPoint(max_num_keypoints=1024).eval()
-    matcher = LightGlue(features="superpoint").eval()
-
     @staticmethod
-    def match(rgb_src, cld_src, rgbs_dst: np.ndarray, clds_dst):
-        """Match rgb_src and rgb_dst, and solve pose from 3d correspondance
+    def match_SP_LG(rgb_src, cld_src, rgbs_dst: np.ndarray, clds_dst):
+        """Match rgb_src and rgb_dst with SuperPoint extractor and LightGlue matcher
         rgb_src: (H1, W1, 3)
         cld_src: (H1, W1, 3)
         rgbs_dst: (N, H2, W2, 3)
         clds_dst: (N, H2, W2, 3)
         """
+        if not hasattr(PoseEstimator, "superpoint"):
+            PoseEstimator.superpoint = SuperPoint(max_num_keypoints=1024).eval()
+        if not hasattr(PoseEstimator, "lightglue"):
+            PoseEstimator.lightglue = LightGlue(features="superpoint").eval()
         assert len(rgbs_dst.shape) == 4
         N = rgbs_dst.shape[0]
         image0 = numpy_image_to_torch(rgb_src)
-        feats0 = PoseEstimator.extractor.extract(image0)
+        feats0 = PoseEstimator.superpoint.extract(image0)
         for i in range(N):
             print(f"matching No. {i} image")
             image1 = numpy_image_to_torch(rgbs_dst[i])
-            feats1 = PoseEstimator.extractor.extract(image1)
-            matches01 = PoseEstimator.matcher({"image0": feats0, "image1": feats1})
+            feats1 = PoseEstimator.superpoint.extract(image1)
+            matches01 = PoseEstimator.lightglue({"image0": feats0, "image1": feats1})
             feats1, matches01 = rbd(feats1), rbd(matches01)
             kpts0, kpts1, matches = (
                 rbd(feats0)["keypoints"],
@@ -209,71 +211,127 @@ class PoseEstimator:
             viz2d.plot_keypoints([kpts0, kpts1], colors=[kpc0, kpc1], ps=6)
             plt.show()
 
+    @staticmethod
+    def match_SIFT_FLANN(rgb_src, cld_src, rgbs_dst: np.ndarray, clds_dst):
+        """Match rgb_src and rgb_dst with SIFT extractor and FLANN matcher
+            rgb_src: (H1, W1, 3)
+            cld_src: (H1, W1, 3)
+            rgbs_dst: (N, H2, W2, 3)
+            clds_dst: (N, H2, W2, 3)
+        return:
+            pixs_src: (N, Ln, 2)
+            pixs_dst: (N, Ln, 2)
+        """
+        if not hasattr(PoseEstimator, "sift"):
+            PoseEstimator.sift = cv2.SIFT_create()
+        if not hasattr(PoseEstimator, "flann"):
+            PoseEstimator.flann = cv2.FlannBasedMatcher()
+        kp1, des1 = PoseEstimator.sift.detectAndCompute(rgb_src, None)
+        pixs_src, pixs_dst = [], []
+        for i in range(len(rgbs_dst)):
+            print(f"matching model image No.{i}")
+            kp2, des2 = PoseEstimator.sift.detectAndCompute(rgbs_dst[i], None)
+            if len(kp2) == 0:
+                print(f"no feature detected in model image No.{i}")
+                continue
+            res = PoseEstimator.flann.knnMatch(des1, des2, k=2)
+            # Lowe distance ratio test, default threshold is 0.7
+            matches = [m for m, n in res if m.distance < 0.7*n.distance]
+            pixs1, pixs2 = PoseEstimator.get_match_pixs(kp1, kp2, matches)
+            mask = PoseEstimator.filter_matches(pixs1, pixs2, cld_src, clds_dst[i], rgb_src, rgbs_dst[i])
+            pixs1, pixs2 = pixs1[mask], pixs1[mask]
+            # visualization
+            img3 = cv2.drawMatches(
+                rgb_src,
+                kp1,
+                rgbs_dst[i],
+                kp2,
+                matches,
+                None,
+                matchesMask=np.array(mask, dtype=int),
+                flags=2,
+            )
+            cv2.imshow("match", img3)
+            cv2.waitKey(0)
+            pixs_src.append(pixs1)
+            pixs_dst.append(pixs2)
+        return pixs_src, pixs_dst
+    
+
+    @staticmethod
+    def estimate():
+        pass
+    
+
+    @staticmethod
+    def filter_matches(pixs1, pixs2, cld1, cld2, rgb1, rgb2):
+        """
+        pixs1, pixs2: matched image points, shaped like (L, 2)
+        return 0-1 mask of the same length with pixs1/pixs2
+        """
+        L = len(pixs1)
+        # other filter
+        # ...
+
+        # homography mask
+        # homoMask: 0-1 mask
+        if L < 4:
+            homoMask = np.ones((L,), dtype=int)
+        else:
+            M, homoMask = cv2.findHomography(pixs1, pixs2, cv2.RANSAC)
+            homoMask = homoMask.ravel()  # (L, )
+
+        # pick out points with depth available
+        # depthMask: 0-1 mask
+        pts1 = cld1[pixs1[:, 1], pixs1[:, 0]]
+        pts2 = cld2[pixs2[:, 1], pixs2[:, 0]]
+        depthMask = (np.linalg.norm(pts1, axis=1) > 1e-3) & (
+            np.linalg.norm(pts2, axis=1) > 1e-3
+        )
+        print(f"filt out {sum(1-depthMask)}")
+        mask = homoMask  # & depthMask
+        return np.array(mask, dtype=bool)
+
+
+    @staticmethod
+    def get_match_pixs(kp1, kp2, matches):
+        """extract matched 2D points in `matches`"""
+        pixs1 = np.int32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 2)
+        pixs2 = np.int32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 2)
+        return pixs1, pixs2
+
 
 if __name__ == "__main__":
     ml = ModelLib(load_only=False)
     cam_in = ml.cam_intrin
-    imgs_rgb, clds = ml.load("carbinet")
+    rgbs_dst, clds_dst = ml.load("carbinet")
     # ml.visualize_snapshots(imgs_rgb, clds)
-    rgb, depth, pose = ml.snapshot()
-    cld = reconstruct(depth, cam_in)
+    rgb_src, depth_src, pose = ml.snapshot()
+    cld_src = reconstruct(depth_src, cam_in)
     R = tf.transformations.quaternion_matrix(pose[1])[:3, :3]
     t = np.array(pose[0])
-    cld = cld @ R.T + t  # (h, w, 3)
+    cld_src = cld_src @ R.T + t  # (h, w, 3)
 
-    PoseEstimator.match(rgb, cld, imgs_rgb, clds)
+    # PoseEstimator.match_SP_LG(rgb_src, cld_src, rgbs_dst, clds_dst)
+    pixs_src, pixs_dst = PoseEstimator.match_SIFT_FLANN(rgb_src, cld_src, rgbs_dst, clds_dst)
+    pts_src = [cld_src[pts[:, 1], pts[:, 0]] for pts in pixs_src]
+    pts_dst = [clds_dst[i][pts[:, 1], pts[:, 0]] for i, pts in enumerate(pixs_dst)]
 
-    # feature extraction
-    detector = cv2.SIFT_create()
-    flann = cv2.FlannBasedMatcher()
-    kp1, des1 = detector.detectAndCompute(rgb, None)
-    src_pts = []
-    dst_pts = []
-    src_pixs = []
-    for i, img in enumerate(imgs_rgb):
-        print(f"matching model image No.{i}")
-        kp2, des2 = detector.detectAndCompute(img, None)
-        if len(kp2) == 0:
-            print(f"no feature detected in model image No.{i}")
-            continue
-        res = flann.knnMatch(des1, des2, k=2)
-        # Lowe distance ratio test, default threshold is 0.7
-        matches = []
-        for m, n in res:
-            if m.distance < 0.7 * n.distance:
-                matches.append(m)
 
-        pixs1 = np.int32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 2)
-        pixs2 = np.int32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 2)
 
-        cld1 = cld[pixs1[:, 1], pixs1[:, 0]]
-        cld2 = clds[i][pixs2[:, 1], pixs2[:, 0]]
-        depth_avail = (np.linalg.norm(cld1, axis=1) > 1e-3) & (
-            np.linalg.norm(cld2, axis=1) > 1e-3
-        )
-        print(f"filt out {sum(1-depth_avail)}")
-        matches = [matches[i] for i in range(len(matches)) if depth_avail[i]]
 
-        # visualize the matches
-        vis = cv2.drawMatches(rgb, kp1, img, kp2, matches[:20], None, flags=2)
-        cv2.imshow("matches", vis)
-        cv2.waitKey(0)
 
-        src_pixs.append(pixs1[depth_avail])
-        src_pts.append(cld1[depth_avail])
-        dst_pts.append(cld2[depth_avail])
-
-    src_pixs = np.concatenate(src_pixs, axis=0)  # (L, 2)
-    src_pts = np.concatenate(src_pts, axis=0)  # (L, 3)
-    dst_pts = np.concatenate(dst_pts, axis=0)  # (L, 3)
+    pixs_src = np.concatenate(pixs_src, axis=0)  # (L, 2)
+    pts_src = np.concatenate(pts_src, axis=0)  # (L, 3)
+    pts_dst = np.concatenate(pts_dst, axis=0)  # (L, 3)
     # registration with o3d
-    idx = np.arange(src_pts.shape[0], dtype=np.int32)
+    idx = np.arange(pts_src.shape[0], dtype=np.int32)
     corres = np.stack([idx, idx], axis=1)  # (L, 2)
     corres = o3d.utility.Vector2iVector(corres)
     src = o3d.geometry.PointCloud()
-    src.points = o3d.utility.Vector3dVector(src_pts)
+    src.points = o3d.utility.Vector3dVector(pts_src)
     dst = o3d.geometry.PointCloud()
-    dst.points = o3d.utility.Vector3dVector(dst_pts)
+    dst.points = o3d.utility.Vector3dVector(pts_dst)
     result = o3d.pipelines.registration.registration_ransac_based_on_correspondence(
         src, dst, corres, 10
     )
@@ -282,11 +340,11 @@ if __name__ == "__main__":
 
     # transform cld with the result.transformation
     pcd_det = o3d.geometry.PointCloud()
-    pcd_det.points = o3d.utility.Vector3dVector(cld.reshape(-1, 3))
-    pcd_det.colors = o3d.utility.Vector3dVector(rgb.reshape(-1, 3) / 255.0)
+    pcd_det.points = o3d.utility.Vector3dVector(cld_src.reshape(-1, 3))
+    pcd_det.colors = o3d.utility.Vector3dVector(rgb_src.reshape(-1, 3) / 255.0)
     pcd_det.transform(result.transformation)
     pcd_model = o3d.geometry.PointCloud()
-    pcd_model.points = o3d.utility.Vector3dVector(clds[0].reshape(-1, 3))
-    pcd_model.colors = o3d.utility.Vector3dVector(imgs_rgb[0].reshape(-1, 3) / 255.0)
+    pcd_model.points = o3d.utility.Vector3dVector(clds_dst[0].reshape(-1, 3))
+    pcd_model.colors = o3d.utility.Vector3dVector(rgbs_dst[0].reshape(-1, 3) / 255.0)
     # pcd_model.transform(result.transformation)
     o3d.visualization.draw_geometries([pcd_det, pcd_model])
