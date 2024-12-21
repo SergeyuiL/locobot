@@ -1,0 +1,8 @@
+<launch>
+    <include file="$(find locobot)/launch/locobot.launch">
+        <arg name="localization_only" value="false"/>
+        <arg name="use_joy" value="false"/>
+        <arg name="use_rviz" value="false"/>
+    </include>
+    <node pkg="locobot" type="all_control.py" name="all_control" output="screen"/>
+</launch>

@@ -1,16 +1,26 @@
 <launch>
     <!-- Cartographer 2D localization -->
-    <arg name="map_dir" />
+    <arg name="localization_only" default="true"/>
+
     <arg name="imu_topic"  default="/wit/imu"/>
     <arg name="scan_topic" default="/locobot/scan"/>
     <arg name="odom_topic" default="/locobot/mobile_base/odom"/>
+    <arg name="map_dir" default="$(find locobot)/maps/default"/>
 
-    <node name="cartographer_node" pkg="cartographer_ros"
+    <node if="$(arg localization_only)" name="cartographer_node" pkg="cartographer_ros"
         type="cartographer_node" args="
             -configuration_directory $(find locobot)/config/carto
             -configuration_basename locobot_localization.lua
-            -load_state_filename $(arg map_dir)/map.pbstream"
-        output="screen">
+            -load_state_filename $(arg map_dir)/map.pbstream">
+        <remap from="/imu"  to="$(arg imu_topic)" />
+        <remap from="/scan" to="$(arg scan_topic)" />
+        <remap from="/odom" to="$(arg odom_topic)" />
+    </node>
+    
+    <node unless="$(arg localization_only)" name="cartographer_node" pkg="cartographer_ros"
+        type="cartographer_node" args="
+            -configuration_directory $(find locobot)/config/carto
+            -configuration_basename locobot.lua">
         <remap from="/imu"  to="$(arg imu_topic)" />
         <remap from="/scan" to="$(arg scan_topic)" />
         <remap from="/odom" to="$(arg odom_topic)" />
