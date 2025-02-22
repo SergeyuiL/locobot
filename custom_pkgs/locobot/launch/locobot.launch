@@ -5,8 +5,8 @@
   <arg name="base_type"                         default="$(optenv INTERBOTIX_XSLOCOBOT_BASE_TYPE kobuki)"/>
   <arg name="use_sim"                           default="false"/>
 
-  <arg name="localization_only"                      default="true"/>
-  <arg name="map_dir"                           default="$(find locobot)/maps/903"/>
+  <arg name="localization_only"                 default="true"/>
+  <arg name="map_dir"                           default="$(find locobot)/maps/default"/> <!-- use `ln -s <path> default` in bash instead of changing here -->
   <arg name="pure_run"                          default="false"/>
   <arg name="use_joy"                           default="false"/>
   <arg name="use_wit_imu"                       default="true"/>

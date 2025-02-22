@@ -6,7 +6,8 @@ import cv2
 import threading
 from copy import deepcopy
 import matplotlib.pyplot as plt
-import time
+import pickle
+import sys
 
 try:
     import rospy
@@ -31,6 +32,14 @@ def reconstruct(depth: np.ndarray, cam_intrin: np.ndarray):
     y = (v - cam_intrin[1, 2]) * z / cam_intrin[1, 1]
     cld = np.stack([x, y, z], axis=-1)
     return cld
+
+
+def transform_cld(cld: np.ndarray, pose: np.ndarray):
+    """transform the point cloud with pose"""
+    R = tf.transformations.quaternion_matrix(pose[1])[:3, :3]
+    t = np.array(pose[0])
+    cld_map = cld @ R.T + t
+    return cld_map
 
 
 class ModelLib:
@@ -64,24 +73,24 @@ class ModelLib:
 
     def load(self, model_name):
         """load snapshots of the model"""
-        model_path = os.path.join(self.model_folder, model_name + ".npy")
-        imgs_rgb, clds = np.load(model_path)
-        imgs_rgb = imgs_rgb.astype(np.uint8)
-        clds = clds.astype(np.float32)
-        return imgs_rgb, clds
+        model_path = os.path.join(self.model_folder, model_name + ".pt")
+        imgs_rgb, clds, poses = pickle.load(open(model_path, 'rb'))
+        imgs_rgb = np.asarray(imgs_rgb, dtype=np.uint8)
+        clds = np.asarray(clds, dtype=np.float32)
+        return imgs_rgb, clds, poses
 
-    def visualize_snapshots(self, imgs_rgb, clds):
+    def visualize_snapshots(self, imgs_rgb, clds, poses=None):
         """visualize the point cloud of the model"""
         print("visualizing the point cloud")
         pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(np.reshape(clds, (-1, 3)))
+        pcd.points = o3d.utility.Vector3dVector(np.reshape([transform_cld(cld, poses[i]) for i, cld in enumerate(clds)], (-1, 3)))
         pcd.colors = o3d.utility.Vector3dVector(np.reshape(imgs_rgb, (-1, 3)) / 255.0)
         o3d.visualization.draw_geometries([pcd])
         # visualize the point cloud with color
 
     def sample_wizard(self, model_name):
         """sample a few snapshots of the model with given name"""
-        model_path = os.path.join(self.model_folder, model_name + ".npy")
+        model_path = os.path.join(self.model_folder, model_name + ".pt")
         print("Press 's' to save the current snapshot")
         print("Press 'q' to quit")
         snapshots = []  # list of (rgb, depth, pose)
@@ -100,25 +109,25 @@ class ModelLib:
             elif key == ord("q"):
                 print("quitting")
                 break
-        imgs_rgb, clds = [], []
-        for i, snap in enumerate(snapshots):
-            img_rgb, img_dep, pose = snap
-            imgs_rgb.append(img_rgb)
-            cld_cam = reconstruct(img_dep, self.cam_intrin)  # (h, w, 3)
-            R = tf.transformations.quaternion_matrix(pose[1])[:3, :3]
-            t = np.array(pose[0])
-            cld_map = cld_cam @ R.T + t  # (h, w, 3)
-            clds.append(cld_map)
+        imgs, clds, poses = [], [], []
+        for rgb, dep, pose in snapshots:
+            imgs.append(rgb)
+            poses.append(pose)
+            cld_cam = reconstruct(dep, self.cam_intrin)  # (h, w, 3)
+            clds.append(cld_cam)
         # visualize the point cloud
         print("sampling done, visualizing the point cloud")
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(np.reshape(clds, (-1, 3)))
-        o3d.visualization.draw_geometries([pcd])
+        self.visualize_snapshots(imgs, clds, poses)
         # save the model snapshots
-        clds = np.array(clds, dtype=np.float32)
-        imgs_rgb = np.array(imgs_rgb, dtype=np.uint8)
-        np.save(model_path, (imgs_rgb, clds))
+        clds = np.asarray(clds, dtype=np.float32)  # (N, H, W, 3)
+        imgs = np.asarray(imgs, dtype=np.uint8)  # (N, H, W, 3)
+        pickle.dump((imgs, clds, poses), open(model_path, "wb"))
         print("model saved to ", model_path)
+        np.set_printoptions(precision=3, suppress=True)
+        for i, pose in enumerate(poses):
+            pos = np.array(pose[0])
+            quat = np.array(pose[1])
+            print(f"pose {i}: {pos}, {quat}")
 
     def snapshot(self):
         """take a snapshot of the current scene"""
@@ -185,6 +194,7 @@ class PoseEstimator:
         N = rgbs_dst.shape[0]
         image0 = numpy_image_to_torch(rgb_src)
         feats0 = PoseEstimator.superpoint.extract(image0)
+        pixs_src, pixs_dst = [], []
         for i in range(N):
             print(f"matching No. {i} image")
             image1 = numpy_image_to_torch(rgbs_dst[i])
@@ -211,6 +221,10 @@ class PoseEstimator:
             viz2d.plot_keypoints([kpts0, kpts1], colors=[kpc0, kpc1], ps=6)
             plt.show()
 
+            pixs_src.append(m_kpts0)
+            pixs_dst.append(m_kpts1)
+        return pixs_src, pixs_dst
+
     @staticmethod
     def match_SIFT_FLANN(rgb_src, cld_src, rgbs_dst: np.ndarray, clds_dst):
         """Match rgb_src and rgb_dst with SIFT extractor and FLANN matcher
@@ -236,9 +250,11 @@ class PoseEstimator:
                 continue
             res = PoseEstimator.flann.knnMatch(des1, des2, k=2)
             # Lowe distance ratio test, default threshold is 0.7
-            matches = [m for m, n in res if m.distance < 0.7*n.distance]
+            matches = [m for m, n in res if m.distance < 0.7 * n.distance]
             pixs1, pixs2 = PoseEstimator.get_match_pixs(kp1, kp2, matches)
-            mask = PoseEstimator.filter_matches(pixs1, pixs2, cld_src, clds_dst[i], rgb_src, rgbs_dst[i])
+            mask = PoseEstimator.filter_matches(
+                pixs1, pixs2, cld_src, clds_dst[i], rgb_src, rgbs_dst[i]
+            )
             pixs1, pixs2 = pixs1[mask], pixs1[mask]
             # visualization
             img3 = cv2.drawMatches(
@@ -256,12 +272,10 @@ class PoseEstimator:
             pixs_src.append(pixs1)
             pixs_dst.append(pixs2)
         return pixs_src, pixs_dst
-    
 
     @staticmethod
     def estimate():
         pass
-    
 
     @staticmethod
     def filter_matches(pixs1, pixs2, cld1, cld2, rgb1, rgb2):
@@ -292,7 +306,6 @@ class PoseEstimator:
         mask = homoMask  # & depthMask
         return np.array(mask, dtype=bool)
 
-
     @staticmethod
     def get_match_pixs(kp1, kp2, matches):
         """extract matched 2D points in `matches`"""
@@ -302,49 +315,15 @@ class PoseEstimator:
 
 
 if __name__ == "__main__":
-    ml = ModelLib(load_only=False)
-    cam_in = ml.cam_intrin
-    rgbs_dst, clds_dst = ml.load("carbinet")
-    # ml.visualize_snapshots(imgs_rgb, clds)
-    rgb_src, depth_src, pose = ml.snapshot()
-    cld_src = reconstruct(depth_src, cam_in)
-    R = tf.transformations.quaternion_matrix(pose[1])[:3, :3]
-    t = np.array(pose[0])
-    cld_src = cld_src @ R.T + t  # (h, w, 3)
+    """ visualize the point cloud of the model """
+    ml = ModelLib(load_only=True)
+    rgbs_dst, clds_dst, poses = ml.load("carbinet")
+    ml.visualize_snapshots(rgbs_dst, clds_dst, poses)
 
-    # PoseEstimator.match_SP_LG(rgb_src, cld_src, rgbs_dst, clds_dst)
-    pixs_src, pixs_dst = PoseEstimator.match_SIFT_FLANN(rgb_src, cld_src, rgbs_dst, clds_dst)
-    pts_src = [cld_src[pts[:, 1], pts[:, 0]] for pts in pixs_src]
-    pts_dst = [clds_dst[i][pts[:, 1], pts[:, 0]] for i, pts in enumerate(pixs_dst)]
-
-
-
-
-
-    pixs_src = np.concatenate(pixs_src, axis=0)  # (L, 2)
-    pts_src = np.concatenate(pts_src, axis=0)  # (L, 3)
-    pts_dst = np.concatenate(pts_dst, axis=0)  # (L, 3)
-    # registration with o3d
-    idx = np.arange(pts_src.shape[0], dtype=np.int32)
-    corres = np.stack([idx, idx], axis=1)  # (L, 2)
-    corres = o3d.utility.Vector2iVector(corres)
-    src = o3d.geometry.PointCloud()
-    src.points = o3d.utility.Vector3dVector(pts_src)
-    dst = o3d.geometry.PointCloud()
-    dst.points = o3d.utility.Vector3dVector(pts_dst)
-    result = o3d.pipelines.registration.registration_ransac_based_on_correspondence(
-        src, dst, corres, 10
-    )
-    print("----------3d match---------")
-    print(result.transformation)
-
-    # transform cld with the result.transformation
-    pcd_det = o3d.geometry.PointCloud()
-    pcd_det.points = o3d.utility.Vector3dVector(cld_src.reshape(-1, 3))
-    pcd_det.colors = o3d.utility.Vector3dVector(rgb_src.reshape(-1, 3) / 255.0)
-    pcd_det.transform(result.transformation)
-    pcd_model = o3d.geometry.PointCloud()
-    pcd_model.points = o3d.utility.Vector3dVector(clds_dst[0].reshape(-1, 3))
-    pcd_model.colors = o3d.utility.Vector3dVector(rgbs_dst[0].reshape(-1, 3) / 255.0)
-    # pcd_model.transform(result.transformation)
-    o3d.visualization.draw_geometries([pcd_det, pcd_model])
+    """ sample """
+    # ml = ModelLib(load_only=False)
+    # if len(sys.argv) < 2:
+    #     print("please specify the model name")
+    #     exit(0)
+    # model_name = sys.argv[1]
+    # ml.sample_wizard(model_name)
