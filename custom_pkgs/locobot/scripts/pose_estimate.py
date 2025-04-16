@@ -316,14 +316,14 @@ class PoseEstimator:
 
 if __name__ == "__main__":
     """ visualize the point cloud of the model """
-    ml = ModelLib(load_only=True)
-    rgbs_dst, clds_dst, poses = ml.load("carbinet")
-    ml.visualize_snapshots(rgbs_dst, clds_dst, poses)
+    # ml = ModelLib(load_only=True)
+    # rgbs_dst, clds_dst, poses = ml.load("carbinet")
+    # ml.visualize_snapshots(rgbs_dst, clds_dst, poses)
 
     """ sample """
-    # ml = ModelLib(load_only=False)
-    # if len(sys.argv) < 2:
-    #     print("please specify the model name")
-    #     exit(0)
-    # model_name = sys.argv[1]
-    # ml.sample_wizard(model_name)
+    ml = ModelLib(load_only=False)
+    if len(sys.argv) < 2:
+        print("please specify the model name")
+        exit(0)
+    model_name = sys.argv[1]
+    ml.sample_wizard(model_name)

@@ -1,0 +1,47 @@
+<launch>
+
+  <!-- Common Launch File Arguments -->
+  <!-- <arg name="robot_model"                       default="locobot_wx250s"/> -->
+  <arg name="robot_model"                       default="locobot_base"/>
+  <arg name="robot_name"                        default="locobot"/>
+  <arg name="mode_type"                         default="base"/>
+  <arg name="base_type"                         default="$(optenv INTERBOTIX_XSLOCOBOT_BASE_TYPE kobuki)"/>
+  <arg name="use_base"                          default="true"/>
+  <arg name="use_joy"                           default="true"/>
+  <arg name="use_camera"                        default="true"/>
+
+  <!-- locobot basic -->
+  <include file="$(find interbotix_xslocobot_control)/launch/xslocobot_control.launch">
+    <arg name="robot_model"                       value="$(arg robot_model)"/>
+    <arg name="robot_name"                        value="$(arg robot_name)"/>
+    <arg name="show_gripper_bar"                  value="true"/>
+    <arg name="show_gripper_fingers"              value="true"/>
+    <arg name="external_urdf_loc"                 value=""/>
+    <arg name="use_rviz"                          value="false"/>
+    <arg name="rviz_frame"                        value="$(arg robot_name)/base_footprint"/>
+    <arg name="use_camera"                        value="false"/>
+    <arg name="use_lidar"                         value="false"/>
+    <arg name="show_lidar"                        value="true"/>
+    <arg name="use_base"                          value="true"/>
+    <arg name="use_dock"                          value="false"/>
+    <arg name="load_configs"                      value="true"/>
+    <arg name="use_sim"                           value="false"/>
+  </include>
+  
+  <group if="$(arg use_joy)">
+    <!-- interbotix_xslocobot_joy Launch File Arguments -->
+    <include file="$(find locobot)/launch/joy.launch">
+      <arg name="robot_name"  value="$(arg robot_name)"/>
+      <arg name="robot_model" value="$(arg robot_model)"/>
+      <arg name="use_base"    value="$(arg use_base)"/>
+      <arg name="base_type"   value="$(arg base_type)"/>
+    </include>
+  </group>
+
+  <group if="$(arg use_camera)">
+    <node pkg="tf" type="static_transform_publisher" name="t265_locobot" args="0.049 -0.047 -0.973 0 0 0 /t265_pose_frame /locobot/base_footprint 100"/>
+
+    <include file="$(find locobot)/launch/d455_t265.launch"/>
+  </group>
+
+</launch>
