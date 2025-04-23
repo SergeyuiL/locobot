@@ -1,0 +1,8 @@
+# request
+string command      #  "stop", "move_forward", "turn_left", "turn_right"
+float32 value       #   meter or degree
+---
+# response
+bool success     
+string message      # status
+
