@@ -245,9 +245,9 @@ class RobotControlServer:
             # 发布速度命令
             self.publish_cmd_vel(linear_speed, 0.0)
             
-            rospy.loginfo(f"Current position: ({self.current_pose.x:.2f}, {self.current_pose.y:.2f}), "
-                          f"Target position: ({target_x:.2f}, {target_y:.2f}), "
-                          f"Distance to target: {current_distance:.2f}, ")
+            # rospy.loginfo(f"Current position: ({self.current_pose.x:.2f}, {self.current_pose.y:.2f}), "
+            #               f"Target position: ({target_x:.2f}, {target_y:.2f}), "
+            #               f"Distance to target: {current_distance:.2f}, ")
             
             rate.sleep()
 

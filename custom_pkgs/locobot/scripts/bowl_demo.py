@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 import numpy as np
 from copy import deepcopy
+from threading import Lock
 import os
 import cv2
-from threading import Thread
 
 import tf, tf2_ros
 import rospy
 from cv_bridge import CvBridge
 
 from locobot.srv import SetPose, SetPoseRequest, SetPoseResponse
+from locobot.srv import SetPose2D
 from locobot.srv import SetPoseArray, SetPoseArrayRequest, SetPoseArrayResponse
 from locobot.srv import SetFloat32, SetFloat32Request, SetFloat32Response
-from perception_service.srv import Sam2Gpt4Infer, Sam2Gpt4InferRequest, Sam2Gpt4InferResponse
+
 from perception_service.srv import GraspInfer, GraspInferRequest, GraspInferResponse
 from perception_service.srv import GroundedSam2Infer, GroundedSam2InferRequest, GroundedSam2InferResponse
+
 from interbotix_xs_msgs.srv import Reboot
 
 from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
@@ -24,7 +26,7 @@ from std_msgs.msg import Header
 from geometry_msgs.msg import TransformStamped, Pose, PoseStamped, Point, Vector3Stamped, Vector3, PoseArray, Quaternion, Twist
 import tf2_geometry_msgs
 
-from arm_control import LocobotArm
+from ultralytics import YOLO
 
 
 def Point2Vector(p: Point):
@@ -88,11 +90,7 @@ def reconstruct(depth:np.ndarray, cam_intrin:np.ndarray, rgb=None):
     rgb_cld = np.concatenate([cld, rgb], axis=-1) if rgb is not None else cld
     return cld, rgb_cld
 
-def reset_arm():
-    prx = rospy.ServiceProxy('/locobot/reboot_motors', Reboot)
-    prx('group', 'arm', True, True)
-
-class FBI:
+class BowlDemo:
     def __init__(self):
         rospy.init_node('FBI', anonymous=True)
         print("---------- init FBI ----------")
@@ -104,16 +102,19 @@ class FBI:
         self.init_caller()
         self.wait_services()
         ## publish grasp goal (if possible)
-        Thread(target=self.pub_grp).start()
+        rospy.Timer(0.1, self.pub_grp)
         print("---------- init done ----------")
-        self.main()
-        return
     
     def init_vars(self):
         cam_info:CameraInfo = rospy.wait_for_message('/locobot/camera/color/camera_info', CameraInfo)
         ## params
-        self.is_quit = False
+        self.t0 = rospy.Time.now()
+        self.map = {}
         self.goal = None ## goal pose in map frame
+        self.img_rgb = None
+        self.img_dep = None
+        self.lock_rgb = Lock()
+        self.lock_dep = Lock()
         ## constant
         self.cam_intrin = np.array(cam_info.K).reshape((3, 3))
         self.coord_map = "map"
@@ -123,14 +124,16 @@ class FBI:
         ## ros objects
         self.bridge = CvBridge()
         self.tf_buf = tf2_ros.Buffer()
-        self.tf_lstn = tf2_ros.TransformListener(self.tf_buf)
+        tf2_ros.TransformListener(self.tf_buf)
         self.tf_pub = tf2_ros.TransformBroadcaster()
-    
+        ## YOLO object
+        self.model = YOLO()
+
     def init_caller(self):
         ## actuation API
         self.arm_ctl = rospy.ServiceProxy('/locobot/arm_control', SetPoseArray)
         self.arm_sleep = rospy.ServiceProxy('/locobot/arm_sleep', SetBool)
-        self.chassis_ctl = rospy.ServiceProxy('/locobot/chassis_control', SetPose)
+        self.chassis_ctl = rospy.ServiceProxy('/locobot/chassis_control', SetPose2D)
         self.gripper_ctl = rospy.ServiceProxy('/locobot/gripper_control', SetBool)
         self.cam_yaw_ctl = rospy.ServiceProxy('/locobot/camera_yaw_control', SetFloat32)
         self.cam_pitch_ctl = rospy.ServiceProxy('/locobot/camera_pitch_control', SetFloat32)
@@ -155,18 +158,43 @@ class FBI:
         rospy.wait_for_service('/grounded_sam2_infer')
         print("grounded_sam is up")
 
+    def main_dev(self):
+        with self.lock_rgb:
+            rgb = deepcopy(self.img_rgb)
+        with self.lock_dep:
+            cld = deepcopy(self.cld)
+
+        _ = self.model.predict(rgb)
+
+        ## TODO: a list of [label, mask]
+        ...
+        results = []
+        ...
+
+        for label, mask in results:
+            pts = cld[np.nonzero(mask)] # (n, 3)
+            pts = pts[np.nonzero(pts[2] > 0.1), :] # filter out points with depth < 0.1
+            pos = pts.mean()
+            t = transform_vec(Vector3(x=pos[0], y=pos[1], z=pos[2]), self.coord_map, self.coord_cam, self.tf_buf)
+            pos_glb = np.array([t.x, t.y, t.z])
+            if label not in self.map:
+                print(f"add {label} to map at {pos_glb} at {rospy.Time.now() - self.t0:.1f} sec")
+                self.map[label] = pos_glb
+            else:
+                self.map[label] = pos_glb * 0.1 + self.map[label] * 0.9 # low-pass
+
+
     def main(self):
-        # # navigate to the front of the cabinet
-        # self.authenticate("Localization mode")
-        # ## TODO: change to detection-based method instead of hard coding here
-        # self.chassis_ctl(Pose(position=self.CHAS_PT1, orientation=Quaternion(w=1.0)))
-        # self.chassis_ctl(Pose(position=self.CHAS_PT2), orientation=Quaternion(w=1.0)))
+        with self.lock_rgb:
+            rgb = deepcopy(self.img_rgb)
+        with self.lock_dep:
+            cld = deepcopy(self.cld)
         self.arm_sleep(True)
 
         ## step 1: grasp handle
         print("----- grasping handle -----")
-        mask = self.get_mask("handle")
-        self.grasp(mask)
+        mask = self.get_mask(rgb, "handle")
+        self.grasp(rgb, cld, mask)
         print("> pulling handle")
         self.chassis_vel.publish(Twist(linear=Vector3(x=-0.12)))
         rospy.sleep(2)
@@ -181,8 +209,8 @@ class FBI:
 
         ## step 2: grasp bowl
         print("----- grasping bowl -----")
-        mask = self.get_mask("bowl")
-        self.grasp(mask, stop_between=True)
+        mask = self.get_mask(rgb, "bowl")
+        self.grasp(rgb, cld, mask, stop_between=True)
         print("> holding and rotating")
         self.arm_ctl([
             Pose(position=self.ARM_PT1, orientation=Quaternion(w=1.0))
@@ -207,8 +235,8 @@ class FBI:
         rospy.sleep(1.5)
         ## grasp handle again
         print("----- grasping handle -----")
-        mask = self.get_mask("handle")
-        self.grasp(mask)
+        mask = self.get_mask(rgb, "handle")
+        self.grasp(rgb, cld, mask, stop_between=True)
         ## push
         self.authenticate("Move")
         self.chassis_vel.publish(Twist(linear=Vector3(x=0.12)))
@@ -222,11 +250,8 @@ class FBI:
         self.quit(0)
         return 
     
-    def grasp(self, mask, stop_between=False):
+    def grasp(self, rgb, cld, mask, stop_between=False):
         """ grasp given object defined by `mask` """
-        rgb = deepcopy(self.img_rgb)
-        cld = deepcopy(self.cld)
-
         msg = GraspInferRequest(
             mask = self.bridge.cv2_to_imgmsg(mask, encoding="mono8"),
             cloud = self.create_pc2_msg(cld, rgb)
@@ -280,18 +305,6 @@ class FBI:
         #     self.quit(1)
         return
 
-    def approach(self, goal:Pose):
-        """ approach to the grasp goal """
-        ## navigate to the front of grasp
-        trans = self.tf_buf.lookup_transform(self.coord_grasp, self.coord_map, rospy.Time(0))
-        p = Pose()
-        p.position.x = -0.2 ## offset
-        p.orientation.w = 1.0
-        navi_goal = tf2_geometry_msgs.do_transform_pose(p, trans)
-        ## call navigation service
-        self.chassis_ctl(navi_goal.pose)
-        return
-
     def filt_grps(self, grasps:PoseArray):
         ## TODO: get best grasp as goal
         goal = grasps[0]
@@ -299,22 +312,19 @@ class FBI:
     
     def pub_grp(self):
         """ publish transform of grasp goal to tf """
-        rate = rospy.Rate(10)
-        while not rospy.is_shutdown() and not self.is_quit:
-            if self.goal is not None:
-                msg = TransformStamped()
-                msg.header.stamp = rospy.Time.now()
-                msg.header.frame_id = self.coord_map
-                msg.child_frame_id = self.coord_grasp
-                msg.transform.translation = Point2Vector(self.goal.position)
-                msg.transform.rotation = self.goal.orientation
-                self.tf_pub.sendTransform(msg)
-            rate.sleep()
-        return 
+        if self.goal is None:
+            return
 
-    def get_mask(self, prompt:str):
+        msg = TransformStamped()
+        msg.header.stamp = rospy.Time.now()
+        msg.header.frame_id = self.coord_map
+        msg.child_frame_id = self.coord_grasp
+        msg.transform.translation = Point2Vector(self.goal.position)
+        msg.transform.rotation = self.goal.orientation
+        self.tf_pub.sendTransform(msg)
+
+    def get_mask(self, rgb, prompt:str):
         """ call segmentation service to get mask of `prompt` """
-        rgb = deepcopy(self.img_rgb)
         cv2.imwrite(os.path.join(os.path.dirname(__file__), f"mask/{prompt}_input.png"), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
         resp:GroundedSam2InferResponse = self.seg_det(prompt, self.bridge.cv2_to_imgmsg(rgb, encoding="rgb8"))
         if not resp.result:
@@ -340,23 +350,13 @@ class FBI:
         return masks[idx]
 
     def on_rec_img(self, msg:Image):
-        if self.is_quit:
-            return
-        self.img_rgb = self.bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
+        with self.lock_rgb:
+            self.img_rgb = self.bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
 
     def on_rec_depth(self, msg:Image):
-        if self.is_quit:
-            return
-        self.img_dep = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1") / 1000.0
-        self.cld, _ = reconstruct(self.img_dep, self.cam_intrin)
-        # hd = Header(frame_id=self.coord_cam, stamp=rospy.Time.now())
-        # fds = [
-        #     PointField('x', 0, PointField.FLOAT32, 1),
-        #     PointField('y', 4, PointField.FLOAT32, 1),
-        #     PointField('z', 8, PointField.FLOAT32, 1),
-        # ]
-        # msg_pc2 = pc2.create_cloud(hd, fds, np.reshape(self.cld, (-1, 3)))
-        # self.pub_cld.publish(msg_pc2)
+        with self.lock_dep:
+            self.img_dep = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1") / 1000.0
+            self.cld, _ = reconstruct(self.img_dep, self.cam_intrin)
     
     def create_pc2_msg(self, cld, rgb):
         ## cloud_rgb
@@ -378,4 +378,5 @@ class FBI:
 
 if __name__ == '__main__':
     # reset_arm()
-    fbi = FBI()
+    demo = BowlDemo()
+    demo.main()

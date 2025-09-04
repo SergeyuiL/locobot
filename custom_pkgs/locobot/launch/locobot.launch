@@ -5,11 +5,11 @@
   <arg name="base_type"                         default="$(optenv INTERBOTIX_XSLOCOBOT_BASE_TYPE kobuki)"/>
   <arg name="use_sim"                           default="false"/>
 
-  <arg name="localization_only"                 default="true"/>
   <arg name="map_dir"                           default="$(find locobot)/maps/default"/> <!-- use `ln -s <path> default` in bash instead of changing here -->
   <arg name="pure_run"                          default="false"/>
   <arg name="use_joy"                           default="false"/>
   <arg name="use_wit_imu"                       default="true"/>
+  <arg name="localization_only"                 default="true"/>
 
   <arg name="use_plane_detection"               default="false"/>
 
@@ -18,29 +18,20 @@
   <arg name="show_gripper_bar"                  default="true"/>
   <arg name="show_gripper_fingers"              default="true"/>
   <arg name="external_urdf_loc"                 default=""/>
-  <arg name="use_rviz"                          default="false"/>
+  <arg name="use_rviz"                          default="true"/>
   <arg name="rviz_frame"                        default="$(arg robot_name)/base_footprint"/>
   <arg name="use_base"                          default="true"/>
   <arg name="use_dock"                          default="false"/>
   <arg name="use_camera"                        default="true"/>
   <arg name="filters"                           default="pointcloud"/>
   <arg name="align_depth"                       default="true"/>
-  <arg name="enable_infra"                      default="false"/>
-  <arg name="enable_infra1"                     default="false"/>
-  <arg name="enable_infra2"                     default="false"/>
-  <arg name="enable_gyro"                       default="false"/>
-  <arg name="enable_accel"                      default="false"/>
-  <arg name="unite_imu_method"                  default=""/>
-  <arg name="color_fps"                         default="30"/>
+  <arg name="color_fps"                         default="60"/>
   <arg name="color_width"                       default="640"/>
   <arg name="color_height"                      default="480"/>
-  <arg name="depth_fps"                         default="30"/>
+  <arg name="depth_fps"                         default="60"/>
   <arg name="depth_width"                       default="640"/>
   <arg name="depth_height"                      default="480"/>
   <arg name="load_configs"                      default="true"/>
-
-   <node name="static_tf_publisher" pkg="tf" type="static_transform_publisher" 
-          args="0 0 0 0 0 0 locobot/camera_color_optical_frame body 100" />
 
   <!-- IMU -->
   <include if="$(arg use_wit_imu)" file="$(find wit_ros_imu)/launch/wit_imu.launch"/>
@@ -64,12 +55,6 @@
     <arg name="use_dock"                          value="$(arg use_dock)"/>
     <arg name="filters"                           value="$(arg filters)"/>
     <arg name="align_depth"                       value="$(arg align_depth)"/>
-    <arg name="enable_infra"                      value="$(arg enable_infra)"/>
-    <arg name="enable_infra1"                     value="$(arg enable_infra1)"/>
-    <arg name="enable_infra2"                     value="$(arg enable_infra2)"/>
-    <arg name="enable_gyro"                       value="$(arg enable_gyro)"/>
-    <arg name="enable_accel"                      value="$(arg enable_accel)"/>
-    <arg name="unite_imu_method"                  value="$(arg unite_imu_method)"/>
     <arg name="color_fps"                         value="$(arg color_fps)"/>
     <arg name="color_width"                       value="$(arg color_width)"/>
     <arg name="color_height"                      value="$(arg color_height)"/>
@@ -104,11 +89,6 @@
   </include>
 
   <group unless="$(arg pure_run)">
-    <!-- rgbd plane detection -->
-    <node if="$(arg use_plane_detection)" name="rgbd_plane_detection_node" pkg="rgbd_plane_detection"  type="rgbd_plane_detection" output="screen"/>
-
-    <!-- <node name="my_node" pkg="apriltag" type="apriltag_demo" output="screen"/> -->
-
     <!-- cartographer -->
     <include file="$(find locobot)/launch/carto.launch">
         <arg name="localization_only" value="$(arg localization_only)" />
@@ -119,44 +99,41 @@
     </include>
 
     <!-- move_base & moveit -->
-    <group unless="$(arg use_joy)">
+    <include file="$(find locobot)/launch/move_base.launch">
+      <arg name="robot_name" value="locobot"/>
+    </include>
 
-      <include file="$(find locobot)/launch/move_base.launch">
-        <arg name="robot_name" value="locobot"/>
-      </include>
+    <rosparam file="$(find interbotix_xslocobot_ros_control)/config/6dof_controllers.yaml" command="load" ns="$(arg robot_name)"/>
+    <rosparam file="$(find interbotix_xslocobot_ros_control)/config/hardware.yaml" command="load" ns="$(arg robot_name)"/>
 
-      <rosparam file="$(find interbotix_xslocobot_ros_control)/config/6dof_controllers.yaml" command="load" ns="$(arg robot_name)"/>
-      <rosparam file="$(find interbotix_xslocobot_ros_control)/config/hardware.yaml" command="load" ns="$(arg robot_name)"/>
+    <node
+      name="controller_spawner"
+      pkg="controller_manager"
+      type="controller_manager"
+      respawn="false"
+      output="screen"
+      ns="$(arg robot_name)"
+      args="spawn arm_controller gripper_controller"/>
 
-      <node
-        name="controller_spawner"
-        pkg="controller_manager"
-        type="controller_manager"
-        respawn="false"
-        output="screen"
-        ns="$(arg robot_name)"
-        args="spawn arm_controller gripper_controller"/>
+    <node name="all_control" pkg="locobot" type="all_control.py" output="log"/>
 
-      <node name="all_control" pkg="locobot" type="all_control.py" output="screen"/>
+    <node
+      name="xs_hardware_interface"
+      pkg="interbotix_xs_ros_control"
+      type="xs_hardware_interface"
+    
+      ns="$(arg robot_name)">
+    </node>
 
-      <node
-        name="xs_hardware_interface"
-        pkg="interbotix_xs_ros_control"
-        type="xs_hardware_interface"
-      
-        ns="$(arg robot_name)">
-      </node>
-
-      <include file="$(find interbotix_xslocobot_moveit)/launch/move_group.launch" ns="$(arg robot_name)">
-        <arg name="robot_model"                       value="$(arg robot_model)"/>
-        <arg name="robot_name"                        value="$(arg robot_name)"/>
-        <arg name="show_lidar"                        value="true"/>
-        <arg name="external_srdf_loc"                 value=""/>
-        <arg name="dof"                               value="6"/>
-        <arg name="use_camera"                        value="$(arg use_camera)"/>
-        <arg name="fake_execution"                    value="false"/>
-        <arg name="publish_monitored_planning_scene"  value="true" />
-      </include>
-    </group>
+    <include file="$(find interbotix_xslocobot_moveit)/launch/move_group.launch" ns="$(arg robot_name)">
+      <arg name="robot_model"                       value="$(arg robot_model)"/>
+      <arg name="robot_name"                        value="$(arg robot_name)"/>
+      <arg name="show_lidar"                        value="true"/>
+      <arg name="external_srdf_loc"                 value=""/>
+      <arg name="dof"                               value="6"/>
+      <arg name="use_camera"                        value="$(arg use_camera)"/>
+      <arg name="fake_execution"                    value="false"/>
+      <arg name="publish_monitored_planning_scene"  value="true" />
+    </include>
   </group>
 </launch>

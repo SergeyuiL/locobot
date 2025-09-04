@@ -11,8 +11,12 @@
   <arg name="reconnect_timeout"         default="6.0"/>
   <arg name="clip_distance"             default="5"/>
   <arg name="enable_fisheye"            default="false"/>
+  <arg name="use_d455"                  default="true"/>
+  <arg name="enable_infra"              default="false"/>
+  <arg name="use_t265"                  default="true"/>
 
-  <group ns="$(arg camera1)">
+
+  <group if="$(arg use_t265)" ns="$(arg camera1)">
     <include file="$(find realsense2_camera)/launch/includes/nodelet.launch.xml">
       <arg name="tf_prefix"                value="$(arg tf_prefix_camera1)"/>
       <arg name="serial_no"                value="$(arg serial_no_camera1)"/>
@@ -36,17 +40,18 @@
       <arg name="unite_imu_method"         value=""/>
       <arg name="publish_odom_tf"          value="true"/>
     </include>
+
+    <node pkg="tf" type="static_transform_publisher" name="t265_to_d455" args="-0.00808203  0.03989147  0.03076259 -0.00796521 -0.01147534  0.0010993 /$(arg tf_prefix_camera1)_link /$(arg tf_prefix_camera2)_link 100"/>
   </group>
 
-  <group ns="$(arg camera2)">
+  <group if="$(arg use_d455)" ns="$(arg camera2)">
     <include file="$(find realsense2_camera)/launch/includes/nodelet.launch.xml">
-      <arg name="device_type"           value="$(arg device_type_camera2)"/>
-      <arg name="initial_reset"         value="$(arg initial_reset)"/>
-      <arg name="reconnect_timeout"     value="$(arg reconnect_timeout)"/>
-      <arg name="clip_distance"         value="$(arg clip_distance)"/>
+      <arg name="device_type"              value="$(arg device_type_camera2)"/>
+      <arg name="initial_reset"            value="$(arg initial_reset)"/>
+      <arg name="reconnect_timeout"        value="$(arg reconnect_timeout)"/>
+      <arg name="clip_distance"            value="$(arg clip_distance)"/>
       <arg name="tf_prefix"                value="$(arg tf_prefix_camera2)"/>
       <arg name="serial_no"                value="$(arg serial_no_camera2)"/>
-      <arg name="enable_sync"              value="true"/>
       <arg name="align_depth"              value="true"/>
       <arg name="depth_width"              value="640"/>
       <arg name="depth_height"             value="480"/>
@@ -57,9 +62,13 @@
       <arg name="depth_fps"                value="30"/>
       <arg name="color_fps"                value="30"/>
       <arg name="filters"                  value="pointcloud"/>
+      <arg name="enable_infra1"            value="$(arg enable_infra)"/>
+      <arg name="enable_infra2"            value="$(arg enable_infra)"/>
+      <arg name="enable_gyro"              value="true"/>
+      <arg name="enable_accel"             value="true"/>
+      <arg name="unite_imu_method"         value="linear_interpolation"/>
+      <arg name="enable_sync"              value="true"/>
     </include>
   </group>
-
-  <node pkg="tf" type="static_transform_publisher" name="t265_to_d455" args="-0.00808203  0.03989147  0.03076259 -0.00796521 -0.01147534  0.0010993 /$(arg tf_prefix_camera1)_link /$(arg tf_prefix_camera2)_link 100"/>
 
 </launch>

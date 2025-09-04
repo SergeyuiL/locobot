@@ -7,8 +7,15 @@
   <arg name="mode_type"                         default="base"/>
   <arg name="base_type"                         default="$(optenv INTERBOTIX_XSLOCOBOT_BASE_TYPE kobuki)"/>
   <arg name="use_base"                          default="true"/>
-  <arg name="use_joy"                           default="true"/>
+  <arg name="use_joy"                           default="false"/>
   <arg name="use_camera"                        default="true"/>
+  <arg name="use_d455"                          default="true"/>
+  <arg name="enable_infra"                      default="true"/>
+  <arg name="use_t265"                          default="false"/>
+  <arg name="use_wit_imu"                       default="true"/>
+  <arg name="use_slam"                          default="true"/>
+  <arg name="localization_only"                 default="false"/>
+  <arg name="map_dir"                           default="$(find locobot)/maps/default"/>
 
   <!-- locobot basic -->
   <include file="$(find interbotix_xslocobot_control)/launch/xslocobot_control.launch">
@@ -27,6 +34,8 @@
     <arg name="load_configs"                      value="true"/>
     <arg name="use_sim"                           value="false"/>
   </include>
+
+  <include if="$(arg use_wit_imu)" file="$(find wit_ros_imu)/launch/wit_imu.launch"/>
   
   <group if="$(arg use_joy)">
     <!-- interbotix_xslocobot_joy Launch File Arguments -->
@@ -39,9 +48,28 @@
   </group>
 
   <group if="$(arg use_camera)">
-    <node pkg="tf" type="static_transform_publisher" name="t265_locobot" args="0.049 -0.047 -0.973 0 0 0 /t265_pose_frame /locobot/base_footprint 100"/>
+    <include file="$(find locobot)/launch/d455_t265.launch">
+      <arg name="use_d455" value="$(arg use_d455)"/>
+      <arg name="enable_infra"  value="$(arg enable_infra)"/>
+      <arg name="use_t265" value="$(arg use_t265)"/>
+    </include>
 
-    <include file="$(find locobot)/launch/d455_t265.launch"/>
+    <node if="$(arg use_t265)" pkg="tf" type="static_transform_publisher" name="t265_locobot" args="0.049 -0.047 -0.973 0 0 0 /t265_pose_frame /locobot/base_footprint 100"/>
+
+    <node unless="$(arg use_t265)" pkg="tf" type="static_transform_publisher" name="camera_d455"  args="0.0 0.0 0.0 0 0 0 /locobot/camera_link /d455_link 100"/>
+  </group>
+
+  <group if="$(arg use_slam)">
+    <include file="$(find locobot)/launch/rplidar.launch"/>
+
+    <include file="$(find locobot)/launch/carto.launch">
+        <arg name="localization_only" value="$(arg localization_only)" />
+        <arg name="map_dir" value="$(arg map_dir)" />
+        <arg name="imu_topic"  value="/wit/imu"/>
+        <arg name="scan_topic" value="/locobot/scan"/>
+        <arg name="odom_topic" value="/locobot/mobile_base/odom"/>
+    </include>
+
   </group>
 
 </launch>
