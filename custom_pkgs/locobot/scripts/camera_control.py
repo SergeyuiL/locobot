@@ -20,7 +20,7 @@ class LocobotCamera:
                                                   pan_profile_velocity=4.0, pan_profile_acceleration=0.6,
                                                   tilt_profile_velocity=4.0, tilt_profile_acceleration=0.6)
 
-        self.init_pitch = 0.8
+        self.init_pitch = 0.4
         self.pitch_limits = [0.9, -0.1] # positive is down, negetive is up
         self.yaw_limits = [-0.7, 0.7]
         self.pitch_server = rospy.Service("/locobot/camera_pitch_control", SetFloat32, self.on_rec_pitch)

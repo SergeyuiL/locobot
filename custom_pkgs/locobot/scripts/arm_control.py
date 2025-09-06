@@ -22,35 +22,33 @@ from locobot.srv import SetPose, SetPoseRequest, SetPoseResponse
 from locobot.srv import SetFloat32, SetFloat32Request, SetFloat32Response
 from locobot.srv import SetPoseArray, SetPoseArrayRequest, SetPoseArrayResponse
 
+
 def _tuple_to_pose(pose_tuple: Tuple[np.ndarray, np.ndarray]) -> Pose:
     return Pose(
-        position=Point(
-            x=pose_tuple[0][0],
-            y=pose_tuple[0][1],
-            z=pose_tuple[0][2],
-        ),
-        orientation=Quaternion(
-            x=pose_tuple[1][0],
-            y=pose_tuple[1][1],
-            z=pose_tuple[1][2],
-            w=pose_tuple[1][3],
-        ),
+        position=Point(*pose_tuple[0]),
+        orientation=Quaternion(*pose_tuple[1]),
     )
+
 
 def _pose_to_tuple(pose: Pose) -> Tuple[np.ndarray, np.ndarray]:
     return (
-        np.array([
-            pose.position.x,
-            pose.position.y,
-            pose.position.z,
-        ]),
-        np.array([
-            pose.orientation.x,
-            pose.orientation.y,
-            pose.orientation.z,
-            pose.orientation.w,
-        ])
+        np.array(
+            [
+                pose.position.x,
+                pose.position.y,
+                pose.position.z,
+            ]
+        ),
+        np.array(
+            [
+                pose.orientation.x,
+                pose.orientation.y,
+                pose.orientation.z,
+                pose.orientation.w,
+            ]
+        ),
     )
+
 
 def initialize_moveit():
     robot_name = "locobot"
@@ -61,8 +59,10 @@ def initialize_moveit():
     arm_group = MoveGroupCommander("interbotix_arm", ns=robot_name, robot_description=robot_description)
     return robot, scene, arm_group
 
-class LocobotArm():
-    """ provide services to control the locobot arm (plan, plan cartesian and sleep) """
+
+class LocobotArm:
+    """provide services to control the locobot arm (plan, plan cartesian and sleep)"""
+
     jnts_name = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
 
     def __init__(self, serving=True) -> None:
@@ -77,9 +77,11 @@ class LocobotArm():
         self.arm_path_pub = rospy.Publisher("/locobot/arm/end_path", PoseArray, queue_size=5)
 
         self.jnt_stats_sub = rospy.Subscriber("/locobot/joint_states", JointState, self.on_jnt_stats)
-        self.tf_buffer.lookup_transform("locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time(), rospy.Duration(5.0))
+        # self.tf_buffer.lookup_transform(
+        #     "locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time(0), rospy.Duration(5.0)
+        # )
 
-        if serving: 
+        if serving:
             ## reach goal poses (with any path)
             rospy.Service("/locobot/arm_control", SetPoseArray, self.reach)
             ## reach goal pose with cartesian path
@@ -91,27 +93,35 @@ class LocobotArm():
 
     @property
     def end_pose(self) -> Tuple[np.ndarray, np.ndarray]:
-        ee_tf: TransformStamped = self.tf_buffer.lookup_transform("locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time())
-        return (np.array([
-            ee_tf.transform.translation.x,
-            ee_tf.transform.translation.y,
-            ee_tf.transform.translation.z,
-        ]), np.array([
-            ee_tf.transform.rotation.x,
-            ee_tf.transform.rotation.y,
-            ee_tf.transform.rotation.z,
-            ee_tf.transform.rotation.w,
-        ]))
+        ee_tf: TransformStamped = self.tf_buffer.lookup_transform(
+            "locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time()
+        )
+        return (
+            np.array(
+                [
+                    ee_tf.transform.translation.x,
+                    ee_tf.transform.translation.y,
+                    ee_tf.transform.translation.z,
+                ]
+            ),
+            np.array(
+                [
+                    ee_tf.transform.rotation.x,
+                    ee_tf.transform.rotation.y,
+                    ee_tf.transform.rotation.z,
+                    ee_tf.transform.rotation.w,
+                ]
+            ),
+        )
 
     @property
     def joint_values(self) -> np.ndarray:
-        return np.array([
-            self._jnt_stats.position[self._jnt_stats.name.index(joint_name)]
-            for joint_name in self.jnts_name
-        ])
-    
-    def reach_c(self, req:SetPoseRequest):
-        """ reach goal pose with cartesian path """
+        return np.array(
+            [self._jnt_stats.position[self._jnt_stats.name.index(joint_name)] for joint_name in self.jnts_name]
+        )
+
+    def reach_c(self, req: SetPoseRequest):
+        """reach goal pose with cartesian path"""
         target_position, target_oritation = _pose_to_tuple(req.data)
         success = self.move_to_pose_with_cartesian(position=target_position, rotation=target_oritation)
         resp = SetPoseResponse()
@@ -119,8 +129,8 @@ class LocobotArm():
         resp.message = "success" if success else "failed"
         return resp
 
-    def reach(self, req:SetPoseArrayRequest):
-        """ reach given waypoints in order """
+    def reach(self, req: SetPoseArrayRequest):
+        """reach given waypoints in order"""
         errcode = self.move_to_poses(req.data)
         resp = SetPoseArrayResponse()
         resp.result = errcode == 0
@@ -130,14 +140,14 @@ class LocobotArm():
     def print_traj(self, traj):
         for pnt in traj.joint_trajectory.points:
             pnt: JointTrajectoryPoint
-            print(f'(time) {pnt.time_from_start.to_sec():.4f}\t(joints_value) ', end="")
+            print(f"(time) {pnt.time_from_start.to_sec():.4f}\t(joints_value) ", end="")
             for i in pnt.positions:
                 print(f"{i:.4f}, ", end="")
             print()
         return
 
     def move_to_poses(self, poses):
-        """ 
+        """
         `poses`: list of Pose;
         return:
         `errcode`:
@@ -151,7 +161,7 @@ class LocobotArm():
             self.arm_group.set_start_state(stat0)
             self.arm_group.set_pose_target(pose)
             succ, traj, _, _ = self.arm_group.plan()
-            traj:RobotTrajectory
+            traj: RobotTrajectory
             print(f"{i}->{i+1}: {'success' if succ else 'fail'}")
             if not succ:
                 return 1
@@ -176,7 +186,7 @@ class LocobotArm():
         self.print_traj(traj_retime)
         return 0 if self.arm_group.execute(traj_retime) else 2
 
-    def arm_config(self, req:SetFloat32Request):
+    def arm_config(self, req: SetFloat32Request):
         factor = req.data
         resp = SetFloat32Response()
         if not (factor > 0 and factor <= 1):
@@ -191,7 +201,7 @@ class LocobotArm():
 
     def on_jnt_stats(self, joint_state: JointState):
         self._jnt_stats = joint_state
-    
+
     def move_to_pose_with_cartesian(self, position, rotation, min_fraction=0.8):
         waypoint_poses = []
         waypoint_poses.append(_tuple_to_pose(self.end_pose))
@@ -213,34 +223,38 @@ class LocobotArm():
     def vis_pose_array(self, poses):
         ## waypoints
         wps = [_tuple_to_pose(pose) for pose in poses]
-        self.arm_path_pub.publish(PoseArray(
-            header=rospy.Header(
-                stamp=rospy.Time.now(),
-                frame_id="base_link",
-            ),
-            poses=wps,
-        ))
+        self.arm_path_pub.publish(
+            PoseArray(
+                header=rospy.Header(
+                    stamp=rospy.Time.now(),
+                    frame_id="base_link",
+                ),
+                poses=wps,
+            )
+        )
 
     def move_cartesian_paths(
-            self,
-            waypoints_: List[List[Tuple[np.ndarray, np.ndarray]]],
-            min_fraction=0.95,
-            move_to_start_pose_first=False,
-            fn_reach_start_pose: Optional[Callable[[],bool]]=None,
-        ) -> bool:
+        self,
+        waypoints_: List[List[Tuple[np.ndarray, np.ndarray]]],
+        min_fraction=0.95,
+        move_to_start_pose_first=False,
+        fn_reach_start_pose: Optional[Callable[[], bool]] = None,
+    ) -> bool:
         plan_success = False
         path: RobotTrajectory
         first_pose_trajectory: RobotTrajectory
         first_pose_joints: List[float]
         for waypoints in waypoints_:
             waypoint_poses = [_tuple_to_pose(pose) for pose in waypoints]
-            self.arm_path_pub.publish(PoseArray(
-                header=rospy.Header(
-                    stamp=rospy.Time.now(),
-                    frame_id="base_link",
-                ),
-                poses=waypoint_poses,
-            ))
+            self.arm_path_pub.publish(
+                PoseArray(
+                    header=rospy.Header(
+                        stamp=rospy.Time.now(),
+                        frame_id="base_link",
+                    ),
+                    poses=waypoint_poses,
+                )
+            )
             self.arm_group.clear_pose_targets()
             if move_to_start_pose_first:
                 self.arm_group.set_start_state_to_current_state()
@@ -289,8 +303,8 @@ class LocobotArm():
         return True
 
     def move_joints(
-            self,
-            target_joints: np.ndarray,
+        self,
+        target_joints: np.ndarray,
     ) -> bool:
         self.arm_group.stop()
         self.arm_group.clear_pose_targets()
@@ -299,13 +313,14 @@ class LocobotArm():
 
         self.arm_group.go(wait=True)
         # print(f"Move arm to joints {target_joints}")
-    
-    def sleep(self, msg:SetBoolRequest):
+
+    def sleep(self, msg: SetBoolRequest):
         if msg.data:
             self.move_joints(np.array([0.0, -1.1, 1.55, 0.0, 0.5, 0.0]))
             return SetBoolResponse(True, "locobot arm sleeped!")
         else:
             return SetBoolResponse(False, "Nothing to do.")
+
 
 if __name__ == "__main__":
     rospy.init_node("arm_controller")

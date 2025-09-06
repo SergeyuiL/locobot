@@ -7,8 +7,10 @@ import tf2_ros
 import tf.transformations
 import threading
 
+
 class Chassis:
-    """ provide services to control the chassis """
+    """provide services to control the chassis"""
+
     def __init__(self, serving=True):
         ## publish chassis goal
         self.pub_goal = rospy.Publisher("/locobot/move_base_simple/goal", PoseStamped, queue_size=10)
@@ -23,9 +25,8 @@ class Chassis:
 
         self.pub_thr = threading.Thread(target=self.publish_pose)
         self.pub_thr.start()
-    
-    
-    def on_chassis_control(self, req:SetPose2DRequest):
+
+    def on_chassis_control(self, req: SetPose2DRequest):
         self.reached = False
         quat = tf.transformations.quaternion_from_euler(0, 0, req.theta)
         ## change pose2D to pose
@@ -48,10 +49,10 @@ class Chassis:
         resp.message = "Goal reached"
         return resp
 
-    def on_status(self, msg:MoveBaseActionResult):
+    def on_status(self, msg: MoveBaseActionResult):
         if msg.status.status == 3:
             self.reached = True
-    
+
     def publish_pose(self):
         r = rospy.Rate(10)
         msg = Pose2D()
@@ -60,7 +61,9 @@ class Chassis:
             robot_base_frame = "locobot/base_footprint"
             map_frame = "map"
             if self.tf_buf.can_transform(robot_base_frame, map_frame, rospy.Time(0)):
-                trans_stamped:TransformStamped = self.tf_buf.lookup_transform(robot_base_frame, map_frame, rospy.Time(0))
+                trans_stamped: TransformStamped = self.tf_buf.lookup_transform(
+                    robot_base_frame, map_frame, rospy.Time(0)
+                )
                 quat = trans_stamped.transform.rotation
                 msg.x = trans_stamped.transform.translation.x
                 msg.y = trans_stamped.transform.translation.y
@@ -70,7 +73,8 @@ class Chassis:
                 print(f"no tf trans between {robot_base_frame} and {map_frame}")
             r.sleep()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     rospy.init_node("chassis_controller")
     chas = Chassis(serving=True)
     rospy.spin()

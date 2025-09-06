@@ -12,6 +12,7 @@ from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
 
 import threading
 
+
 def initialize_gripper():
     dxl = InterbotixRobotXSCore(
         robot_model="wx250s",
@@ -25,9 +26,10 @@ def initialize_gripper():
         gripper_name="gripper",
         gripper_pressure=1,
         gripper_pressure_lower_limit=150,
-        gripper_pressure_upper_limit=350
+        gripper_pressure_upper_limit=350,
     )
     return dxl, gripper
+
 
 srv_set_gain_name = "locobot/set_motor_pid_gains"
 srv_set_gain = rospy.ServiceProxy(srv_set_gain_name, MotorGains)
@@ -35,7 +37,8 @@ srv_set_gain = rospy.ServiceProxy(srv_set_gain_name, MotorGains)
 srv_set_reg_name = "locobot/set_motor_registers"
 srv_set_reg = rospy.ServiceProxy(srv_set_reg_name, RegisterValues)
 
-def set_gain(motor:str, ki_vel: int, kp_vel:int, kd_pos: int, ki_pos: int, kp_pos: int, ff_gain1: int, ff_gain2: int):
+
+def set_gain(motor: str, ki_vel: int, kp_vel: int, kd_pos: int, ki_pos: int, kp_pos: int, ff_gain1: int, ff_gain2: int):
     rospy.wait_for_service(srv_set_gain_name)
     print(f"Setting {motor} PID to {ki_vel}, {kp_vel}, {kd_pos}, {ki_pos}, {kp_pos}")
     req = MotorGainsRequest()
@@ -50,7 +53,8 @@ def set_gain(motor:str, ki_vel: int, kp_vel:int, kd_pos: int, ki_pos: int, kp_po
     req.k2 = ff_gain2
     srv_set_gain.call(req)
 
-def set_reg(motor:str, reg:str, val:int):
+
+def set_reg(motor: str, reg: str, val: int):
     rospy.wait_for_service(srv_set_reg_name)
     reg_req = RegisterValuesRequest()
     reg_req.cmd_type = "single"
@@ -58,6 +62,7 @@ def set_reg(motor:str, reg:str, val:int):
     reg_req.reg = reg
     reg_req.value = val
     srv_set_reg.call(reg_req)
+
 
 def initialize_motor_pids():
     set_gain("waist", 1920, 100, 0, 1000, 2400, 500, 50)
@@ -73,8 +78,10 @@ def initialize_motor_pids():
     set_reg("wrist_angle", "Profile_Acceleration", 6)
     set_reg("wrist_rotate", "Profile_Acceleration", 6)
 
+
 class Gripper:
-    """ publish gripper state (close or not) and provide service to control gripper """
+    """publish gripper state (close or not) and provide service to control gripper"""
+
     def __init__(self, serving=True):
         print("---------------init moto pids---------------")
         initialize_motor_pids()
@@ -87,7 +94,7 @@ class Gripper:
         # self.gripper_contorl_sub = rospy.Subscriber("/locobot/gripper_control", String, self.control_callback)
         if serving:
             self.gripper_service = rospy.Service("/locobot/gripper_control", SetBool, self.close_gripper)
-    
+
     def close_gripper(self, req: SetBoolRequest):
         if req.data:
             # rospy.loginfo("close gripper ...")
@@ -97,7 +104,7 @@ class Gripper:
             # rospy.loginfo("open gripper ...")
             self.open()
             return SetBoolResponse(True, "opened gripper")
-        
+
     # def control_callback(self, msg):
     #     if msg.data == "open":
     #         self.open()
@@ -123,9 +130,11 @@ class Gripper:
         else:
             # print(self.gripper_impl.gripper_command.cmd)
             return self.gripper_state
+
     def publish_state(self):
         state = self.state
         self.gripper_state_pub.publish(state)
+
 
 if __name__ == "__main__":
     rospy.init_node("gripper_controller")

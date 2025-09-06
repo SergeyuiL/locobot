@@ -100,9 +100,9 @@ class PoseEstimator:
             GMatch.util.Solve(match_data)
             # GMatch.util.Refine(match_data)
 
-            rospy.loginfo(f"gmatch costs {(rospy.Time.now() - t0)*1e-6} ms. match len: {L}")
             L = len(match_data.matches_list[match_data.idx_best])
-            if L < 14:
+            rospy.loginfo(f"gmatch costs {(rospy.Time.now() - t0)*1e-6} ms. match len: {L}")
+            if L < 8:
                 r.sleep()
                 continue
 
@@ -112,8 +112,8 @@ class PoseEstimator:
             msg.header.stamp = rospy.Time.now()
             msg.header.frame_id = self.coord_cam
             msg.child_frame_id = self.coord_targ
-            msg.transform.translation = Vector3(x=pos[0], y=pos[1], z=pos[2])
-            msg.transform.rotation = Quaternion(x=rot[0], y=rot[1], z=rot[2], w=rot[3])
+            msg.transform.translation = Vector3(*pos)
+            msg.transform.rotation = Quaternion(*rot)
 
             self.tf_pub.sendTransform(msg)
 
