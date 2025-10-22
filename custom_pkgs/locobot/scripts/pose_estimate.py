@@ -55,7 +55,6 @@ class PoseEstimator:
             "/locobot/camera/aligned_depth_to_color/image_raw", Image, self.on_rec_depth
         )
 
-
     def on_rec_img(self, msg):
         with self.lock_rgb:
             self.img_rgb = self.bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")

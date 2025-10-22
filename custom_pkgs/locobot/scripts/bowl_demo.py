@@ -6,6 +6,7 @@ import os
 import cv2
 
 import tf, tf2_ros
+import tf.transformations
 import rospy
 from cv_bridge import CvBridge
 
@@ -118,39 +119,39 @@ class BowlDemo:
         self.init_vars()
         self.init_caller()
         self.wait_services()
-        ## publish grasp goal (if possible)
+        # publish grasp goal (if possible)
         rospy.Timer(rospy.Duration(0.1), self.pub_grp)
         print("---------- init done ----------")
 
     def init_vars(self):
         cam_info: CameraInfo = rospy.wait_for_message("/locobot/camera/color/camera_info", CameraInfo)
-        ## params
+        # params
         self.t0 = rospy.Time.now()
         self.is_quit = False
         self.map = {}
-        self.goal = None  ## goal pose in map frame
+        self.goal = None  # goal pose in map frame
         self.img_rgb = None
         self.img_dep = None
         self.lock_rgb = Lock()
         self.lock_dep = Lock()
-        ## constant
+        # constant
         self.cam_intrin = np.array(cam_info.K).reshape((3, 3))
         self.coord_map = "map"
         self.coord_arm_base = "locobot/base_footprint"
         self.coord_gripper = "locobot/ee_gripper_link"
         self.coord_grasp = "locobot/grasp_goal"
-        self.coord_cam = "locobot/camera_color_optical_frame"  ## not locobot/camera_aligned_depth_to_color_frame
-        ## ros objects
+        self.coord_cam = "locobot/camera_color_optical_frame"  # not locobot/camera_aligned_depth_to_color_frame
+        # ros objects
         self.bridge = CvBridge()
         self.tf_buf = tf2_ros.Buffer()
         tf2_ros.TransformListener(self.tf_buf)
         self.tf_pub = tf2_ros.TransformBroadcaster()
         self.tf_spub = tf2_ros.StaticTransformBroadcaster()
-        ## YOLO object
+        # YOLO object
         # self.model = YOLO()
 
     def init_caller(self):
-        ## actuation API
+        # actuation API
         self.arm_ctl = rospy.ServiceProxy("/locobot/arm_control", SetPoseArray)
         self.arm_sleep = rospy.ServiceProxy("/locobot/arm_sleep", SetBool)
         self.chassis_ctl = rospy.ServiceProxy("/locobot/chassis_control", SetPose2D)
@@ -158,13 +159,11 @@ class BowlDemo:
         self.cam_yaw_ctl = rospy.ServiceProxy("/locobot/camera_yaw_control", SetFloat32)
         self.cam_pitch_ctl = rospy.ServiceProxy("/locobot/camera_pitch_control", SetFloat32)
         self.chassis_vel = rospy.Publisher("/locobot/mobile_base/commands/velocity", Twist, queue_size=10)
-        ## perception API
+        # perception API
         self.grasp_det = rospy.ServiceProxy("/grasp_infer", GraspInfer)
         self.seg_det = rospy.ServiceProxy("/grounded_sam2_infer", GroundedSam2Infer)
-        ## visualization
-        self.pub_cld = rospy.Publisher(
-            "/locobot/point_cloud", PointCloud2, queue_size=1
-        )  ## for visualization and debug
+        # visualization
+        self.pub_cld = rospy.Publisher("/locobot/point_cloud", PointCloud2, queue_size=1)  # for visualization and debug
 
     def wait_services(self):
         rospy.Subscriber("/locobot/camera/color/image_raw", Image, self.on_rec_img)
@@ -188,7 +187,7 @@ class BowlDemo:
 
         _ = self.model.predict(rgb)
 
-        ## TODO: a list of [label, mask]
+        # TODO: a list of [label, mask]
         ...
         results = []
         ...
@@ -212,7 +211,7 @@ class BowlDemo:
             cld = deepcopy(self.cld)
         self.arm_sleep(True)
 
-        ## step 1: grasp handle
+        # step 1: grasp handle
         print("----- grasping handle -----")
         mask = self.get_mask(rgb, "handle")
         self.grasp_mask(rgb, cld, mask)
@@ -228,7 +227,7 @@ class BowlDemo:
 
         rospy.sleep(1.5)
 
-        ## step 2: grasp bowl
+        # step 2: grasp bowl
         print("----- grasping bowl -----")
         mask = self.get_mask(rgb, "bowl")
         self.grasp_mask(rgb, cld, mask, stop_between=True)
@@ -245,23 +244,23 @@ class BowlDemo:
         self.gripper_ctl(False)
 
         print("> resetting arm and grasp handle")
-        ## back
+        # back
         self.chassis_vel.publish(Twist(linear=Vector3(x=-0.14)))
-        ## reset arm
+        # reset arm
         self.arm_sleep(True)
         rospy.sleep(1.5)
-        ## grasp handle again
+        # grasp handle again
         print("----- grasping handle -----")
         mask = self.get_mask(rgb, "handle")
         self.grasp_mask(rgb, cld, mask, stop_between=True)
-        ## push
+        # push
         self.authenticate("Move")
         self.chassis_vel.publish(Twist(linear=Vector3(x=0.12)))
         rospy.sleep(1.5)
-        ## open gripper
+        # open gripper
         self.gripper_ctl(False)
         rospy.sleep(1)
-        ## back and reset arm
+        # back and reset arm
         self.chassis_vel.publish(Twist(linear=Vector3(x=-0.08)))
         self.arm_sleep(True)
         self.quit(0)
@@ -278,7 +277,7 @@ class BowlDemo:
         if not resp.result or not len(grasps):
             return
         print(f"grasps generated ({(rospy.Time.now() - t0).to_sec():.1f} sec)")
-        ## `goal` is in the same link with `depth`
+        # `goal` is in the same link with `depth`
         goal = self.filt_grps(grasps)
         self.goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
         self.grasp_goal(stop_between)
@@ -286,22 +285,20 @@ class BowlDemo:
     def grasp_goal(self, goal_pose, stop_between=False):
         self.gripper_ctl(False)
         ee_goal_list = []
-        ## append pre-grasp
+        # append pre-grasp
         rospy.sleep(0.5)  # wait a few seconds for coord_grasp published
-        t = transform_vec(Vector3(-0.1, 0, 0), self.coord_map, self.coord_grasp, self.tf_buf)
+        t = transform_vec(Vector3(-0.08, 0, 0), self.coord_map, self.coord_grasp, self.tf_buf)
         goal_pre = translate(goal_pose, t)
         ee_goal = transform_pose(goal_pre, self.coord_arm_base, self.coord_map, self.tf_buf)
         ee_goal_list.append(ee_goal)
         print("append pre-grasp")
-        ## append grasp
+        # append grasp
         ee_goal = transform_pose(goal_pose, self.coord_arm_base, self.coord_map, self.tf_buf)
         ee_goal_list.append(ee_goal)
         print("append grasp")
 
         if stop_between:
-            self.arm_ctl([ee_goal_list[0]])
-            for ee_goal in ee_goal_list[1:]:
-                rospy.sleep(1.5)
+            for ee_goal in ee_goal_list:
                 self.arm_ctl([ee_goal])
         else:
             self.arm_ctl(ee_goal_list)
@@ -323,7 +320,7 @@ class BowlDemo:
         return
 
     def filt_grps(self, grasps: PoseArray):
-        ## TODO: get best grasp as goal
+        # TODO: get best grasp as goal
         goal = grasps[0]
         return goal
 
@@ -378,7 +375,7 @@ class BowlDemo:
             self.cld, _ = reconstruct(self.img_dep, self.cam_intrin)
 
     def create_pc2_msg(self, cld, rgb):
-        ## cloud_rgb
+        # cloud_rgb
         hd = Header(frame_id=self.coord_cam, stamp=rospy.Time.now())
         fds = [
             PointField("x", 0, PointField.FLOAT32, 1),
@@ -399,20 +396,30 @@ class BowlDemo:
         print("arrange arm manually.")
         coord_targ = "pose_estimate/target"
 
-        while 1:
-            ## get grasp pose (in coord_targ)
-            pose = transform_pose(
-                Pose(position=Point(), orientation=Quaternion(0, 0, 0, 1)), coord_targ, self.coord_gripper, self.tf_buf
-            )
-            pos = pose.position
-            rot = pose.orientation
-            if input("confirm grasp pose?") == "":
-                break
+        pose_targ2cam = transform_pose(
+            Pose(position=Point(), orientation=Quaternion(0, 0, 0, 1)), self.coord_cam, coord_targ, self.tf_buf
+        )
 
-        ## save to output_file
+        print("Now, manually set the robot arm to the goal pose. Do NOT move camera during that process.")
+
+        if input("Confirm grasp pose? (enter to confirm, otherwise aborts)") != "":
+            print("demo grasp aborted.")
+            return
+
+        # get grasp pose (in coord_targ)
+        pose_targ2grasp = transform_pose(pose_targ2cam, self.coord_gripper, self.coord_cam, self.tf_buf)
+
+        pos = pose_targ2grasp.position
+        rot = pose_targ2grasp.orientation
+        euler = tf.transformations.euler_from_quaternion([rot.x, rot.y, rot.z, rot.w])
+        M = tf.transformations.compose_matrix(translate=[pos.x, pos.y, pos.z], angles=euler)
+        M_inv = tf.transformations.inverse_matrix(M)
+        _, _, angles, pos, _ = tf.transformations.decompose_matrix(M_inv)
+        rot = tf.transformations.quaternion_from_euler(*angles)
+        # save to output_file
         with open(output_file, "w") as f:
-            f.write(f"[{pos.x}, {pos.y}, {pos.z}]\n")
-            f.write(f"[{rot.x}, {rot.y}, {rot.z}, {rot.w}]")
+            f.write(f"{list(pos)}\n")
+            f.write(f"{list(rot)}")
         print("write grasp pose w.r.t. 'pose_estimate/target' to ", output_file)
 
 
@@ -444,5 +451,3 @@ if __name__ == "__main__":
     demo.grasp_goal(goal, stop_between=True)
 
     print("done")
-    while not rospy.is_shutdown():
-        rospy.sleep(1)

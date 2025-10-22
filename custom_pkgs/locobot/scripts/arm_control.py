@@ -8,6 +8,8 @@ from geometry_msgs.msg import PoseStamped, Pose
 from moveit_msgs.msg import RobotTrajectory, RobotState
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
+from control_msgs.msg import JointTrajectoryControllerState
+
 import numpy as np
 import rospy
 from tf2_ros import Buffer, TransformListener
@@ -21,6 +23,9 @@ from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
 from locobot.srv import SetPose, SetPoseRequest, SetPoseResponse
 from locobot.srv import SetFloat32, SetFloat32Request, SetFloat32Response
 from locobot.srv import SetPoseArray, SetPoseArrayRequest, SetPoseArrayResponse
+
+
+np.set_printoptions(precision=3, suppress=True)
 
 
 def _tuple_to_pose(pose_tuple: Tuple[np.ndarray, np.ndarray]) -> Pose:
@@ -63,7 +68,7 @@ def initialize_moveit():
 class LocobotArm:
     """provide services to control the locobot arm (plan, plan cartesian and sleep)"""
 
-    jnts_name = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
+    joint_names = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
 
     def __init__(self, serving=True) -> None:
 
@@ -71,12 +76,15 @@ class LocobotArm:
         self.tf_listener = TransformListener(self.tf_buffer)
 
         self.robot, self.scene, self.arm_group = initialize_moveit()
-        self.arm_group.set_max_acceleration_scaling_factor(0.5)
-        self.arm_group.set_max_velocity_scaling_factor(0.5)
+        self.scale_factor = 0.8
+        self.arm_group.set_max_velocity_scaling_factor(self.scale_factor)
+        self.arm_group.set_max_acceleration_scaling_factor(self.scale_factor)
 
         self.arm_path_pub = rospy.Publisher("/locobot/arm/end_path", PoseArray, queue_size=5)
 
-        self.jnt_stats_sub = rospy.Subscriber("/locobot/joint_states", JointState, self.on_jnt_stats)
+        self.ctl_state_sub = rospy.Subscriber(
+            "/locobot/arm_controller/state", JointTrajectoryControllerState, self.on_ctl_state
+        )
         # self.tf_buffer.lookup_transform(
         #     "locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time(0), rospy.Duration(5.0)
         # )
@@ -90,6 +98,8 @@ class LocobotArm:
             rospy.Service("locobot/arm_config", SetFloat32, self.arm_config)
             ## for quick test
             rospy.Service("/locobot/arm_sleep", SetBool, self.sleep)
+            ## for emergency stop
+            rospy.Service("locobot/arm_stop", SetBool, self.stop)
 
     @property
     def end_pose(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -112,12 +122,6 @@ class LocobotArm:
                     ee_tf.transform.rotation.w,
                 ]
             ),
-        )
-
-    @property
-    def joint_values(self) -> np.ndarray:
-        return np.array(
-            [self._jnt_stats.position[self._jnt_stats.name.index(joint_name)] for joint_name in self.jnts_name]
         )
 
     def reach_c(self, req: SetPoseRequest):
@@ -179,28 +183,35 @@ class LocobotArm:
         traj_retime = self.arm_group.retime_trajectory(
             ref_state_in=self.arm_group.get_current_state(),
             traj_in=traj_concat,
-            velocity_scaling_factor=0.5,
-            acceleration_scaling_factor=0.5,
+            velocity_scaling_factor=self.scale_factor,
+            acceleration_scaling_factor=self.scale_factor,
         )
         print("retimed traj:")
         self.print_traj(traj_retime)
-        return 0 if self.arm_group.execute(traj_retime) else 2
+        self.arm_group.execute(traj_retime)
+        return 0 if np.max(self.joint_states_err) < 5e-2 else 2
 
     def arm_config(self, req: SetFloat32Request):
         factor = req.data
         resp = SetFloat32Response()
         if not (factor > 0 and factor <= 1):
             resp.result = False
-            resp.message = f"provided scaling factor {factor:.3f} is not in (0, 1]"
+            resp.message = f"provided scaling factor {factor:.3f} is not in (0, 1], current: {self.scale_factor:.3f}."
         else:
             self.arm_group.set_max_acceleration_scaling_factor(factor)
             self.arm_group.set_max_velocity_scaling_factor(factor)
             resp.result = True
-            resp.message = f"velocity and acceleration scaling factor changed to {factor:.3f}"
+            resp.message = (
+                f"velocity and acceleration scaling factor changed from {self.scale_factor:.3f} to {factor:.3f}"
+            )
+            self.scale_factor = factor
         return resp
 
-    def on_jnt_stats(self, joint_state: JointState):
-        self._jnt_stats = joint_state
+    def on_ctl_state(self, ctl_state: JointTrajectoryControllerState):
+        self.joint_states = np.array(ctl_state.actual.positions)
+        self.joint_states_goal = np.array(ctl_state.desired.positions)
+        self.joint_states_err = np.array(ctl_state.error.positions)
+        rospy.loginfo(f"error: {self.joint_states_err}")
 
     def move_to_pose_with_cartesian(self, position, rotation, min_fraction=0.8):
         waypoint_poses = []
@@ -264,7 +275,7 @@ class LocobotArm:
                     continue
                 first_pose_joints = first_pose_trajectory.joint_trajectory.points[-1].positions
                 start_state = RobotState()
-                start_state.joint_state.name = self._jnt_stats.name
+                start_state.joint_state.name = self.joint_names
                 start_state.joint_state.position = first_pose_joints
                 self.arm_group.set_start_state(start_state)
             else:
@@ -302,10 +313,7 @@ class LocobotArm:
         print("Arm reached target!")
         return True
 
-    def move_joints(
-        self,
-        target_joints: np.ndarray,
-    ) -> bool:
+    def move_joints(self, target_joints: np.ndarray) -> bool:
         self.arm_group.stop()
         self.arm_group.clear_pose_targets()
         self.arm_group.set_start_state_to_current_state()
@@ -321,10 +329,17 @@ class LocobotArm:
         else:
             return SetBoolResponse(False, "Nothing to do.")
 
+    def stop(self, msg: SetBoolRequest):
+        if not msg.data:
+            return SetBoolRequest(False, "invalid stop command.")
+        self.arm_group.clear_pose_targets()
+        self.arm_group.stop()
+        return SetBoolResponse(True, "locobot arm stopped!")
+
 
 if __name__ == "__main__":
     rospy.init_node("arm_controller")
-    arm = LocobotArm()
+    arm = LocobotArm(serving=False)
     p1 = Pose(
         position=Point(x=0.35, y=0, z=0.5),
         orientation=Quaternion(x=0, y=0, z=0, w=1),
@@ -336,5 +351,6 @@ if __name__ == "__main__":
     # import os
     # os.system('rosservice call /locobot/arm_control "data: {position: {x: 0.35, y: 0.0, z: 0.5}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}"')
     # os.system('rosservice call /locobot/arm_control "data: {position: {x: 0.4, y: 0.0, z: 0.4}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}"')
-    arm.move_to_poses([p1, p2])
-    rospy.spin()
+    arm.move_to_poses([p1])
+    arm.move_to_poses([p2])
+    print("done")
