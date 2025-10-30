@@ -21,7 +21,7 @@ from cv_bridge import CvBridge
 from sensor_msgs.msg import CameraInfo, Image
 from geometry_msgs.msg import TransformStamped, Vector3, Quaternion
 
-import GMatch
+from GMatch import gmatch
 
 
 class PoseEstimator:
@@ -30,7 +30,7 @@ class PoseEstimator:
         with open(path_snapshots, 'rb') as f:
             snapshots = pickle.load(f)
         self.imgs_src, self.clds_src, self.masks_src, M_ex_list = zip(*snapshots)
-        self.poses_src = [GMatch.util.mat2pose(M_ex) for M_ex in M_ex_list]
+        self.poses_src = [gmatch.util.mat2pose(M_ex) for M_ex in M_ex_list]
 
         self.lock_rgb = threading.Lock()
         self.lock_depth = threading.Lock()
@@ -84,20 +84,20 @@ class PoseEstimator:
             D_near = 1e-2
             D_far = 1
                 
-            match_data = GMatch.util.MatchData(
+            match_data = gmatch.util.MatchData(
                 imgs_src=self.imgs_src,
                 clds_src=self.clds_src,
                 masks_src=self.masks_src,
                 poses_src=self.poses_src,
                 img_dst=img_rgb,
-                cld_dst=GMatch.util.depth2cld(img_dep, self.cam_intrin),
+                cld_dst=gmatch.util.depth2cld(img_dep, self.cam_intrin),
                 mask_dst=np.where((img_dep > D_near) & (img_dep < D_far), 255, 0).astype(np.uint8),
             )
 
             t0 = rospy.Time.now()
-            GMatch.gmatch.Match(match_data, cache_id='default', debug=-1)
-            GMatch.util.Solve(match_data)
-            # GMatch.util.Refine(match_data)
+            gmatch.Match(match_data, cache_id='default', debug=-1)
+            gmatch.util.Solve(match_data)
+            # gmatch.util.Refine(match_data)
 
             L = len(match_data.matches_list[match_data.idx_best])
             rospy.loginfo(f"gmatch costs {(rospy.Time.now() - t0)*1e-6} ms. match len: {L}")
@@ -105,7 +105,7 @@ class PoseEstimator:
                 r.sleep()
                 continue
 
-            pos, rot = GMatch.util.mat2pose(match_data.mat_m2c)
+            pos, rot = gmatch.util.mat2pose(match_data.mat_m2c)
 
             msg = TransformStamped()
             msg.header.stamp = rospy.Time.now()

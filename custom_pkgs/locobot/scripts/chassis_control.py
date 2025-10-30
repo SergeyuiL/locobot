@@ -52,7 +52,7 @@ class Chassis:
         if msg.status.status == 3:
             self.reached = True
 
-    def publish_pose(self):
+    def publish_pose(self, timer_event):
         msg = Pose2D()
         ## look up `robot_base_frame` in "<locobot>/launch/move_base.launch"
         robot_base_frame = "locobot/base_footprint"

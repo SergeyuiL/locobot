@@ -91,6 +91,7 @@ class Gripper:
         self.gripper_state = "close"
         self.close()
         self.gripper_state_pub = rospy.Publisher("/locobot/gripper_state", String, queue_size=20)
+        rospy.Timer(rospy.Duration(0.1), lambda timer_event:self.gripper_state_pub.publish(self.state))
         # self.gripper_contorl_sub = rospy.Subscriber("/locobot/gripper_control", String, self.control_callback)
         if serving:
             self.gripper_service = rospy.Service("/locobot/gripper_control", SetBool, self.close_gripper)
@@ -131,15 +132,10 @@ class Gripper:
             # print(self.gripper_impl.gripper_command.cmd)
             return self.gripper_state
 
-    def publish_state(self):
-        state = self.state
-        self.gripper_state_pub.publish(state)
-
 
 if __name__ == "__main__":
     rospy.init_node("gripper_controller")
     gripper = Gripper()
-    rate = rospy.Rate(10.0)
-    while not rospy.is_shutdown():
-        gripper.publish_state()
-        rate.sleep()
+    import os
+    os.system(r'rosservice call /locobot/arm_control "data: [{position: {x: 0.35, y: 0.0, z: 0.4}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}]"')
+    os.system(r'rosservice call /locobot/arm_sleep "data: true"')

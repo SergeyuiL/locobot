@@ -33,7 +33,7 @@
   <arg name="depth_height"                      default="480"/>
   <arg name="load_configs"                      default="true"/>
 
-  <env name="ROSCONSOLE_CONFIG_FILE" value="$(find locobot)/config/rosconsole.yaml"/>
+  <!-- <env name="ROSCONSOLE_CONFIG_FILE" value="$(find locobot)/config/rosconsole.yaml"/> -->
 
   <!-- IMU -->
   <include if="$(arg use_wit_imu)" file="$(find wit_ros_imu)/launch/wit_imu.launch"/>
@@ -117,7 +117,7 @@
       ns="$(arg robot_name)"
       args="spawn arm_controller gripper_controller"/>
 
-    <node name="all_control" pkg="locobot" type="all_control.py" output="log"/>
+    <node name="all_control" pkg="locobot" type="all_control.py" output="screen"/>
 
     <node
       name="xs_hardware_interface"

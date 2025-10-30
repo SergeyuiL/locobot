@@ -210,7 +210,7 @@ class LocobotArm:
         self.joint_states = np.array(ctl_state.actual.positions)
         self.joint_states_goal = np.array(ctl_state.desired.positions)
         self.joint_states_err = np.array(ctl_state.error.positions)
-        rospy.loginfo(f"error: {self.joint_states_err}")
+        # rospy.loginfo(f"error: {self.joint_states_err}")
 
     def move_to_pose_with_cartesian(self, position, rotation, min_fraction=0.8):
         waypoint_poses = []
