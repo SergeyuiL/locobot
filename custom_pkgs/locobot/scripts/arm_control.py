@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 from typing import Callable, List, Optional, Tuple
-import threading
 
 from geometry_msgs.msg import Pose, Point, Quaternion, PoseArray, TransformStamped
 from geometry_msgs.msg import PoseStamped, Pose

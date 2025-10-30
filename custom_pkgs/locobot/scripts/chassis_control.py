@@ -5,7 +5,6 @@ from geometry_msgs.msg import Pose, PoseStamped, Pose2D, Point, Quaternion, Tran
 import rospy
 import tf2_ros
 import tf.transformations
-import threading
 
 
 class Chassis:
@@ -23,8 +22,8 @@ class Chassis:
         self.tf_buf = tf2_ros.Buffer()
         self.tf_lstn = tf2_ros.TransformListener(self.tf_buf)
 
-        self.pub_thr = threading.Thread(target=self.publish_pose)
-        self.pub_thr.start()
+        rospy.Timer(rospy.Duration(0.1), self.publish_pose)
+
 
     def on_chassis_control(self, req: SetPose2DRequest):
         self.reached = False
@@ -54,24 +53,21 @@ class Chassis:
             self.reached = True
 
     def publish_pose(self):
-        r = rospy.Rate(10)
         msg = Pose2D()
-        while not rospy.is_shutdown():
-            ## look up `robot_base_frame` in "<locobot>/launch/move_base.launch"
-            robot_base_frame = "locobot/base_footprint"
-            map_frame = "map"
-            if self.tf_buf.can_transform(robot_base_frame, map_frame, rospy.Time(0)):
-                trans_stamped: TransformStamped = self.tf_buf.lookup_transform(
-                    robot_base_frame, map_frame, rospy.Time(0)
-                )
-                quat = trans_stamped.transform.rotation
-                msg.x = trans_stamped.transform.translation.x
-                msg.y = trans_stamped.transform.translation.y
-                msg.theta = tf.transformations.euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])[2]
-                self.pub_curr.publish(msg)
-            else:
-                print(f"no tf trans between {robot_base_frame} and {map_frame}")
-            r.sleep()
+        ## look up `robot_base_frame` in "<locobot>/launch/move_base.launch"
+        robot_base_frame = "locobot/base_footprint"
+        map_frame = "map"
+        if self.tf_buf.can_transform(robot_base_frame, map_frame, rospy.Time(0)):
+            trans_stamped: TransformStamped = self.tf_buf.lookup_transform(
+                robot_base_frame, map_frame, rospy.Time(0)
+            )
+            quat = trans_stamped.transform.rotation
+            msg.x = trans_stamped.transform.translation.x
+            msg.y = trans_stamped.transform.translation.y
+            msg.theta = tf.transformations.euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])[2]
+            self.pub_curr.publish(msg)
+        else:
+            print(f"no tf trans between {robot_base_frame} and {map_frame}")
 
 
 if __name__ == "__main__":
