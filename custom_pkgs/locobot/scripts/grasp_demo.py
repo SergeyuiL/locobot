@@ -1,45 +1,34 @@
 #!/usr/bin/env python3
+import os, cv2, json
+import argparse
 import numpy as np
 from copy import deepcopy
 from threading import Lock
-import os
-import cv2
 
 import tf, tf2_ros
 import tf.transformations
 import rospy
 from cv_bridge import CvBridge
 
-from locobot.srv import SetPose, SetPoseRequest, SetPoseResponse
-from locobot.srv import SetPose2D
-from locobot.srv import SetPoseArray, SetPoseArrayRequest, SetPoseArrayResponse
-from locobot.srv import SetFloat32, SetFloat32Request, SetFloat32Response
+from std_srvs.srv import SetBool
+from std_msgs.msg import Header
 
+from sensor_msgs.msg import Image, CameraInfo, PointCloud2, PointField
+import sensor_msgs.point_cloud2 as pc2
+from geometry_msgs.msg import *
+from moveit_msgs.msg import OrientationConstraint, Constraints
+
+import tf2_geometry_msgs
+
+from ultralytics import YOLO
+
+# custom srv 
+from locobot.srv import SetPose2D, SetFloat32
 from perception_service.srv import GraspInfer, GraspInferRequest, GraspInferResponse
 from perception_service.srv import GroundedSam2Infer, GroundedSam2InferRequest, GroundedSam2InferResponse
 
-from interbotix_xs_msgs.srv import Reboot
-
-from std_srvs.srv import SetBool, SetBoolRequest, SetBoolResponse
-from sensor_msgs.msg import Image, CameraInfo, PointCloud2, PointField
-import sensor_msgs.point_cloud2 as pc2
-from std_msgs.msg import Header
-from geometry_msgs.msg import (
-    TransformStamped,
-    Pose,
-    PoseStamped,
-    Point,
-    Vector3Stamped,
-    Vector3,
-    PoseArray,
-    Quaternion,
-    Twist,
-)
-import tf2_geometry_msgs
-from moveit_msgs.msg import OrientationConstraint, Constraints
+# custom python module
 from arm_control import LocobotArm
-
-from ultralytics import YOLO
 
 
 def Point2Vector(p: Point):
@@ -110,7 +99,7 @@ def reconstruct(depth: np.ndarray, cam_intrin: np.ndarray, rgb=None):
     return cld, rgb_cld
 
 
-class BowlDemo:
+class GraspDemo:
     def __init__(self):
         rospy.init_node("bowl_demo", anonymous=True)
         print("---------- init BowlDemo ----------")
@@ -346,17 +335,19 @@ class BowlDemo:
         msg_pc2 = pc2.create_cloud(hd, fds, np.reshape(np.concatenate([cld, rgb], axis=-1), (-1, 6)))
         return msg_pc2
 
-    def demo_grasp(self, output_file):
-        print("arrange arm manually.")
+    def demo_grasp(self, path_save, object_label:str):
+        print("Start demo grasp wizard.")
         coord_targ = "pose_estimate/target"
 
         pose_targ2cam = transform_pose(
             Pose(position=Point(), orientation=Quaternion(0, 0, 0, 1)), self.coord_cam, coord_targ, self.tf_buf
         )
 
-        print("Now, manually set the robot arm to the goal pose. Do NOT move camera during that process.")
+        print("Now, manually set the robot arm to the goal pose.")
+        print("Do NOT move camera during that process.")
+        print("When you are done, press <Enter> to confirm, otherwise to abort> ", end="")
 
-        if input("Confirm grasp pose? (enter to confirm, otherwise aborts)") != "":
+        if input() != "":
             print("demo grasp aborted.")
             return
 
@@ -371,23 +362,37 @@ class BowlDemo:
         _, _, angles, pos, _ = tf.transformations.decompose_matrix(M_inv)
         rot = tf.transformations.quaternion_from_euler(*angles)
         # save to output_file
-        with open(output_file, "w") as f:
-            f.write(f"{list(pos)}\n")
-            f.write(f"{list(rot)}")
-        print("write grasp pose w.r.t. 'pose_estimate/target' to ", output_file)
+        with open(path_save, "r") as f:
+            content = json.load(f)
+        content[object_label] = {"pos": list(pos), "rot": list(rot)}
+        with open(path_save, "w") as f:
+            json.dump(content, f)
+        print("write grasp pose w.r.t. 'pose_estimate/target' to ", path_save)
+        return content
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Control Locobot to grasp objects.")
+    parser.add_argument("--label", type=str, required=True, help="The grasp label for target object, e.g. handle, rod, wire, etc.")
+    args = parser.parse_args()
+
+    object_label = args.label
+
     # reset_arm()
-    demo = BowlDemo()
+    demo = GraspDemo()
 
-    path_grasp_pose = "./grasp_pose.txt"
-    if not os.path.exists(path_grasp_pose):
-        demo.demo_grasp(path_grasp_pose)
+    path_gspose = "./grasp_pose.json" # path to grasp_pose.json
+    if not os.path.exists(path_gspose):
+        json.dump({}, path_gspose)
 
-    with open(path_grasp_pose, "r") as f:
-        p = eval(f.readline())
-        q = eval(f.readline())
+    with open(path_gspose, "r") as f:
+        content = json.load(f)
+
+    if object_label not in content:
+        content = demo.demo_grasp(path_gspose, object_label)
+
+    p = content[object_label]['pos']
+    q = content[object_label]['rot']
 
     msg = TransformStamped()
     msg.header.stamp = rospy.Time.now()

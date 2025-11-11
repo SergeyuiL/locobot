@@ -12,7 +12,7 @@ import threading
 from copy import deepcopy
 import matplotlib.pyplot as plt
 import pickle
-import sys
+import argparse
 
 import rospy
 import tf, tf2_ros
@@ -25,12 +25,13 @@ from GMatch import gmatch
 
 
 class PoseEstimator:
-    def __init__(self, path_snapshots):
+    def __init__(self, args):
         rospy.init_node("pose_estimate", anonymous=True)
-        with open(path_snapshots, 'rb') as f:
+        with open(args.path_object, 'rb') as f:
             snapshots = pickle.load(f)
         self.imgs_src, self.clds_src, self.masks_src, M_ex_list = zip(*snapshots)
         self.poses_src = [gmatch.util.mat2pose(M_ex) for M_ex in M_ex_list]
+        self.args = args
 
         self.lock_rgb = threading.Lock()
         self.lock_depth = threading.Lock()
@@ -79,7 +80,11 @@ class PoseEstimator:
             
             cv2.imshow("rgb", cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR))
             cv2.imshow("depth", img_dep)
-            cv2.waitKey(1)
+            key = cv2.waitKey(1)
+            if key == ord('s'):
+                print("save color.png and depth.png")
+                cv2.imwrite("cache/color.png", cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR))
+                cv2.imwrite("cache/depth.png", np.asarray(img_dep * 1e3, dtype=np.uint16))
 
             D_near = 1e-2
             D_far = 1
@@ -95,13 +100,13 @@ class PoseEstimator:
             )
 
             t0 = rospy.Time.now()
-            gmatch.Match(match_data, cache_id='default', debug=-1)
+            gmatch.Match(match_data, cache_id=rospy.get_name(), debug=self.args.debug)
             gmatch.util.Solve(match_data)
             # gmatch.util.Refine(match_data)
 
             L = len(match_data.matches_list[match_data.idx_best])
             rospy.loginfo(f"gmatch costs {(rospy.Time.now() - t0)*1e-6} ms. match len: {L}")
-            if L < 8:
+            if L < self.args.Lmin:
                 r.sleep()
                 continue
 
@@ -120,5 +125,10 @@ class PoseEstimator:
 
 
 if __name__ == '__main__':
-    estim = PoseEstimator('/home/locobot/locobot/src/custom_pkgs/locobot/scripts/GMatch/cache/default_object.pt')
+    parser = argparse.ArgumentParser(description="Estimate 6D pose of given object.")
+    parser.add_argument('--path_object', type=str, required=True, help='Path to snapshots file (typically ends with .pt).')
+    parser.add_argument('--Lmin', type=int, required=True, help='Min length of matches to use.')
+    parser.add_argument('--debug', type=int, default=-1, help='Debug level, bigger means more info.')
+    args = parser.parse_args()
+    estim = PoseEstimator(args)
     estim.run()
