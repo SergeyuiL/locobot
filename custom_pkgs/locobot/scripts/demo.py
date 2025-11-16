@@ -22,13 +22,14 @@ import tf2_geometry_msgs
 
 from ultralytics import YOLO
 
-# custom srv 
+# custom srv
 from locobot.srv import SetPose2D, SetFloat32
 from perception_service.srv import GraspInfer, GraspInferRequest, GraspInferResponse
 from perception_service.srv import GroundedSam2Infer, GroundedSam2InferRequest, GroundedSam2InferResponse
 
 # custom python module
 from arm_control import LocobotArm
+from wbc import LocobotMPC
 
 
 def Point2Vector(p: Point):
@@ -48,7 +49,7 @@ def Vector2Point(v: Vector3):
 def transform_pose(pose: Pose, dst_frame: str, src_frame: str, tf_buf: tf2_ros.Buffer) -> Pose:
     """transform pose from `src_frame` to `dst_frame` now"""
     while not tf_buf.can_transform(dst_frame, src_frame, rospy.Time(0)):
-        rospy.sleep(0.2)
+        rospy.sleep(0.1)
     msg = PoseStamped()
     msg.pose = pose
     msg.header.frame_id = src_frame
@@ -78,8 +79,9 @@ def transform_vec(vec: Vector3, dst_frame: str, src_frame: str, tf_buf: tf2_ros.
 def translate(pose: Pose, vec: Vector3) -> Pose:
     """translate pose by vector (assume they are in same coordinate, if not, use @transform_vec first)"""
     res = deepcopy(pose)
-    for idx in ["x", "y", "z"]:
-        setattr(res.position, idx, getattr(res.position, idx) + getattr(vec, idx))
+    res.position.x += vec.x
+    res.position.y += vec.y
+    res.position.z += vec.z
     return res
 
 
@@ -99,10 +101,10 @@ def reconstruct(depth: np.ndarray, cam_intrin: np.ndarray, rgb=None):
     return cld, rgb_cld
 
 
-class GraspDemo:
+class Demo:
     def __init__(self):
-        rospy.init_node("bowl_demo", anonymous=True)
-        print("---------- init BowlDemo ----------")
+        rospy.init_node("demo", anonymous=True)
+        print("---------- init Demo ----------")
         self.CHAS_PT1 = Point(x=0.15, y=-0.6, z=0)
         self.CHAS_PT2 = Point(x=0.15, y=0, z=0)
         self.ARM_PT1 = Point(x=0.35, y=0, z=0.5)
@@ -129,8 +131,10 @@ class GraspDemo:
         self.coord_map = "map"
         self.coord_arm_base = "locobot/base_footprint"
         self.coord_gripper = "locobot/ee_gripper_link"
-        self.coord_grasp = "locobot/grasp_goal"
+        self.coord_ee_goal = "locobot/ee_goal"
         self.coord_cam = "locobot/camera_color_optical_frame"  # not locobot/camera_aligned_depth_to_color_frame
+        self.coord_targ = "pose_estimate/target"
+
         # ros objects
         self.bridge = CvBridge()
         self.tf_buf = tf2_ros.Buffer()
@@ -193,8 +197,7 @@ class GraspDemo:
             else:
                 self.map[label] = pos_glb * 0.1 + self.map[label] * 0.9  # low-pass
 
-
-    def grasp_mask(self, rgb, cld, mask, stop_between=False):
+    def grasp_mask(self, rgb, cld, mask):
         """grasp given object defined by `mask`"""
         msg = GraspInferRequest(
             mask=self.bridge.cv2_to_imgmsg(mask, encoding="mono8"), cloud=self.create_pc2_msg(cld, rgb)
@@ -208,58 +211,61 @@ class GraspDemo:
         # `goal` is in the same link with `depth`
         goal = self.filt_grps(grasps)
         goal = transform_pose(goal, self.coord_map, self.coord_cam, self.tf_buf)
-        self.grasp_goal(goal, stop_between)
+        self.grasp_goal(goal)
 
-    def grasp_goal(self, goal_pose, stop_between=True):
-        """ pre-grasp + grasp to `goal_pose` (in `coord_map`) """
+    def reach_goal_with_direction(self, goal_pose, offset):
+        """reach `goal_pose + offset` first and then `goal_pose`.
+        Note: `goal_pose` is w.r.t. the map frame.
+        """
         self.goal = goal_pose
-        self.gripper_ctl(False)
-        ee_goal_list = []
-        rospy.sleep(0.2)  # wait a few seconds for coord_grasp published
+        self.pub_grp(None)
+        rospy.sleep(0.1)
 
-        # append pre-grasp
-        t = transform_vec(Vector3(-0.08, 0, 0), self.coord_map, self.coord_grasp, self.tf_buf)
+        # reach pre-goal (goal_pose + offset)
+        vec = Vector3(*offset)  # offset is list-like, e.g., [-0.1, 0, 0]
+        t = transform_vec(vec, self.coord_map, self.coord_ee_goal, self.tf_buf)
         goal_pre = translate(goal_pose, t)
         ee_goal = transform_pose(goal_pre, self.coord_arm_base, self.coord_map, self.tf_buf)
-        ee_goal_list.append(ee_goal)
-        print("append pre-grasp")
+        self.arm.move_to_poses([ee_goal])
 
-        # append grasp
+        # add orientation constraint
+        oc = OrientationConstraint()
+        oc.header.frame_id = self.coord_arm_base
+        oc.link_name = self.arm.arm_group.get_end_effector_link()
+        oc.orientation = ee_goal.orientation  # 约束的目标朝向
+        oc.absolute_x_axis_tolerance = 0.15  # -0.15 ~ +0.15 rad
+        oc.absolute_y_axis_tolerance = 0.15
+        oc.absolute_z_axis_tolerance = 0.15
+        oc.weight = 1.0
+        constraints = Constraints()
+        constraints.orientation_constraints.append(oc)
+        self.arm.arm_group.set_path_constraints(constraints)
+
+        # reach goal_pose
         ee_goal = transform_pose(goal_pose, self.coord_arm_base, self.coord_map, self.tf_buf)
-        ee_goal_list.append(ee_goal)
-        print("append grasp")
+        self.arm.move_to_poses([ee_goal])
 
-        if stop_between:
-            self.arm.move_to_poses([ee_goal_list[0]])
+        # clear constraint
+        self.arm.arm_group.clear_path_constraints()
+        return
 
-            oc = OrientationConstraint()
-            oc.header.frame_id = self.coord_arm_base
-            oc.link_name = self.arm.arm_group.get_end_effector_link()  # 通常是 "gripper_link" 或自定义
-            oc.orientation = ee_goal_list[0].orientation  # 约束的目标朝向
-            oc.absolute_x_axis_tolerance = 0.2  # -0.2 ~ +0.2 rad 偏差
-            oc.absolute_y_axis_tolerance = 0.2  
-            oc.absolute_z_axis_tolerance = 0.2
-            oc.weight = 1.0
-
-            constraints = Constraints()
-            constraints.orientation_constraints.append(oc)
-
-            self.arm.arm_group.set_path_constraints(constraints)
-            self.arm.move_to_poses([ee_goal_list[1]])
-            self.arm.arm_group.clear_path_constraints()
-        else:
-            self.arm.move_to_poses(ee_goal_list)
-        rospy.sleep(1)
-        print("Grasp done")
+    def grasp_goal(self, goal_pose):
+        """aprroach from negative x-axis and then grasp"""
+        self.gripper_ctl(False)
+        self.reach_goal_with_direction(goal_pose, offset=[-0.08, 0, 0])
         self.gripper_ctl(True)
-        rospy.sleep(1)
-        print(f"finish grasping")
+        return
+
+    def place_goal(self, goal_pose):
+        """approach from positive z-axis and then place"""
+        self.reach_goal_with_direction(goal_pose, offset=[0, 0, 0.08])
+        self.gripper_ctl(False)
         return
 
     def authenticate(self, description: str = ""):
         """
         authenticate arm executation for goal pose (ask for 'enter' in terminal)
-        user can check the goal pose ("locobot/grasp_goal", "TransformStamped") in rviz
+        user can check the goal pose ("locobot/ee_goal", "TransformStamped") in rviz
         """
         if input(f"<Confirm {description} with Enter:>\n") != "":
             print("aborted")
@@ -279,7 +285,7 @@ class GraspDemo:
         msg = TransformStamped()
         msg.header.stamp = rospy.Time.now()
         msg.header.frame_id = self.coord_map
-        msg.child_frame_id = self.coord_grasp
+        msg.child_frame_id = self.coord_ee_goal
         msg.transform.translation = Point2Vector(self.goal.position)
         msg.transform.rotation = self.goal.orientation
         self.tf_pub.sendTransform(msg)
@@ -335,12 +341,11 @@ class GraspDemo:
         msg_pc2 = pc2.create_cloud(hd, fds, np.reshape(np.concatenate([cld, rgb], axis=-1), (-1, 6)))
         return msg_pc2
 
-    def demo_grasp(self, path_save, object_label:str):
-        print("Start demo grasp wizard.")
-        coord_targ = "pose_estimate/target"
+    def demo_goal(self, path_save, object_label: str):
+        print("Start demo goal wizard.")
 
         pose_targ2cam = transform_pose(
-            Pose(position=Point(), orientation=Quaternion(0, 0, 0, 1)), self.coord_cam, coord_targ, self.tf_buf
+            Pose(position=Point(), orientation=Quaternion(0, 0, 0, 1)), self.coord_cam, self.coord_targ, self.tf_buf
         )
 
         print("Now, manually set the robot arm to the goal pose.")
@@ -351,11 +356,11 @@ class GraspDemo:
             print("demo grasp aborted.")
             return
 
-        # get grasp pose (in coord_targ)
-        pose_targ2grasp = transform_pose(pose_targ2cam, self.coord_gripper, self.coord_cam, self.tf_buf)
+        # get goal pose (in coord_targ)
+        pose_targ2goal = transform_pose(pose_targ2cam, self.coord_gripper, self.coord_cam, self.tf_buf)
 
-        pos = pose_targ2grasp.position
-        rot = pose_targ2grasp.orientation
+        pos = pose_targ2goal.position
+        rot = pose_targ2goal.orientation
         euler = tf.transformations.euler_from_quaternion([rot.x, rot.y, rot.z, rot.w])
         M = tf.transformations.compose_matrix(translate=[pos.x, pos.y, pos.z], angles=euler)
         M_inv = tf.transformations.inverse_matrix(M)
@@ -366,48 +371,60 @@ class GraspDemo:
             content = json.load(f)
         content[object_label] = {"pos": list(pos), "rot": list(rot)}
         with open(path_save, "w") as f:
-            json.dump(content, f)
-        print("write grasp pose w.r.t. 'pose_estimate/target' to ", path_save)
+            json.dump(content, f, indent=4)
+        print(f"write goal pose w.r.t. '{self.coord_targ}' to {path_save}")
         return content
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Control Locobot to grasp objects.")
-    parser.add_argument("--label", type=str, required=True, help="The grasp label for target object, e.g. handle, rod, wire, etc.")
+    parser = argparse.ArgumentParser(description="Control Locobot to grasp/place objects.")
+    parser.add_argument(
+        "--label", type=str, required=True, help="The label for target object, e.g. handle, rod, wire, etc."
+    )
+    ex_group = parser.add_mutually_exclusive_group()
+    ex_group.add_argument("--grasp", action="store_true")
+    ex_group.add_argument("--place", action="store_true")
     args = parser.parse_args()
 
     object_label = args.label
 
     # reset_arm()
-    demo = GraspDemo()
+    demo = Demo()
 
-    path_gspose = "./grasp_pose.json" # path to grasp_pose.json
-    if not os.path.exists(path_gspose):
-        json.dump({}, path_gspose)
+    path_gpose = "./goal_pose.json"  # path to goal_pose.json
+    if not os.path.exists(path_gpose):
+        json.dump({}, path_gpose)
 
-    with open(path_gspose, "r") as f:
+    with open(path_gpose, "r") as f:
         content = json.load(f)
 
     if object_label not in content:
-        content = demo.demo_grasp(path_gspose, object_label)
+        content = demo.demo_goal(path_gpose, object_label)
 
-    p = content[object_label]['pos']
-    q = content[object_label]['rot']
+    p = content[object_label]["pos"]
+    q = content[object_label]["rot"]
 
+    # publish static transformation
     msg = TransformStamped()
     msg.header.stamp = rospy.Time.now()
-    msg.header.frame_id = "pose_estimate/target"
-    msg.child_frame_id = demo.coord_grasp
+    msg.header.frame_id = demo.coord_targ
+    msg.child_frame_id = demo.coord_ee_goal
     msg.transform.translation = Vector3(*p)
     msg.transform.rotation = Quaternion(*q)
     demo.tf_spub.sendTransform(msg)
 
-    demo.authenticate("grasp")
+    demo.authenticate("Perform grasp/place.")
 
     goal = transform_pose(
-        Pose(position=Point(0, 0, 0), orientation=Quaternion(0, 0, 0, 1)), demo.coord_map, demo.coord_grasp, demo.tf_buf
+        Pose(position=Point(0, 0, 0), orientation=Quaternion(0, 0, 0, 1)),
+        demo.coord_map,
+        demo.coord_ee_goal,
+        demo.tf_buf,
     )
-    demo.grasp_goal(goal, stop_between=True)
+    if args.grasp:
+        demo.grasp_goal(goal)
+    else:
+        demo.place_goal(goal)
 
     print("done")
     rospy.spin()
