@@ -115,8 +115,6 @@ def Mat2Pose(T: np.ndarray):
 
 class Demo:
     def __init__(self):
-        rospy.init_node("demo", anonymous=True)
-        print("---------- init Demo ----------")
         self.CHAS_PT1 = Point(x=0.15, y=-0.6, z=0)
         self.CHAS_PT2 = Point(x=0.15, y=0, z=0)
         self.ARM_PT1 = Point(x=0.35, y=0, z=0.5)
@@ -124,16 +122,12 @@ class Demo:
         self.init_vars()
         self.init_caller()
         self.wait_services()
-        # publish grasp goal (if possible)
-        rospy.Timer(rospy.Duration(0.1), self.pub_grp)
-        print("---------- init done ----------")
 
     def init_vars(self):
         cam_info: CameraInfo = rospy.wait_for_message("/locobot/camera/color/camera_info", CameraInfo)
         # params
         self.t0 = rospy.Time.now()
         self.map = {}
-        self.goal = None  # goal pose in map frame
         self.img_rgb = None
         self.img_dep = None
         self.lock_rgb = Lock()
@@ -230,10 +224,6 @@ class Demo:
         """reach `goal_pose + offset` first and then `goal_pose`.
         Note: `goal_pose` is w.r.t. the map frame.
         """
-        self.goal = goal_pose
-        self.pub_grp(None)
-        rospy.sleep(0.1)
-
         # reach pre-goal (goal_pose + offset)
         vec = Vector3(*offset)  # offset is list-like, e.g., [-0.1, 0, 0]
         vec = transform_vec(vec, self.coord_map, self.coord_ee_goal, self.tf_buf)
@@ -258,17 +248,10 @@ class Demo:
         self.arm.arm_group.clear_path_constraints()
 
     def approach(self, goal_pose, offset):
-        self.goal = goal_pose
-        self.pub_grp(None)
-        rospy.sleep(0.1)
-
         # reach pre-goal (goal_pose + offset)
         vec = Vector3(*offset)  # offset is list-like, e.g., [-0.1, 0, 0]
         vec = transform_vec(vec, self.coord_map, self.coord_ee_goal, self.tf_buf)
         goal_pre = translate(goal_pose, vec)
-
-        self.goal = goal_pre
-        self.pub_grp(None)
 
         T_g2w = Pose2Mat(goal_pre)  # goal w.r.t. world
 
@@ -330,7 +313,7 @@ class Demo:
         authenticate arm executation for goal pose (ask for 'enter' in terminal)
         user can check the goal pose ("locobot/ee_goal", "TransformStamped") in rviz
         """
-        if input(f"<Confirm {description} with Enter:>\n") != "":
+        if input(f"Confirm {description} with Enter:") != "":
             print("aborted")
             exit(1)
         return
@@ -339,19 +322,6 @@ class Demo:
         # TODO: get best grasp as goal
         goal = grasps[0]
         return goal
-
-    def pub_grp(self, timer_event):
-        """publish transform of grasp goal to tf"""
-        if self.goal is None or rospy.is_shutdown():
-            return
-
-        msg = TransformStamped()
-        msg.header.stamp = rospy.Time.now()
-        msg.header.frame_id = self.coord_map
-        msg.child_frame_id = self.coord_ee_goal
-        msg.transform.translation = Vector3(*ToArray(self.goal.position))
-        msg.transform.rotation = self.goal.orientation
-        self.tf_pub.sendTransform(msg)
 
     def get_mask(self, rgb, prompt: str):
         """call segmentation service to get mask of `prompt`"""
@@ -443,6 +413,7 @@ class Demo:
 
 
 if __name__ == "__main__":
+    rospy.init_node("demo", anonymous=True)
     parser = argparse.ArgumentParser(description="Control Locobot to grasp/place objects.")
     # positional argument
     parser.add_argument("operation", choices=["grasp", "place"], help="either grasp or place")

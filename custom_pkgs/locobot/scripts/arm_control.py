@@ -70,7 +70,6 @@ class LocobotArm:
     joint_names = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
 
     def __init__(self, serving=True) -> None:
-
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer)
 
@@ -316,7 +315,7 @@ class LocobotArm:
         self.arm_group.set_joint_value_target(target_joints)
 
         self.arm_group.go(wait=True)
-        # print(f"Move arm to joints {target_joints}")
+        print(f"Move arm to joints {target_joints}")
 
     def sleep(self, msg: SetBoolRequest):
         if msg.data:

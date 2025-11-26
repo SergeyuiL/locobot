@@ -26,12 +26,10 @@ from GMatch import gmatch
 
 class PoseEstimator:
     def __init__(self, args):
-        rospy.init_node("pose_estimate", anonymous=True)
-        with open(args.path_object, "rb") as f:
-            snapshots = pickle.load(f)
-        self.imgs_src, self.clds_src, self.masks_src, M_ex_list = zip(*snapshots)
-        self.poses_src = [gmatch.util.mat2pose(M_ex) for M_ex in M_ex_list]
         self.args = args
+
+        self.imgs_src, self.clds_src, self.masks_src, self.poses_src = None, None, None, None
+        self.lock_snapshots = threading.Lock()
 
         self.lock_rgb = threading.Lock()
         self.lock_depth = threading.Lock()
@@ -52,6 +50,17 @@ class PoseEstimator:
         rospy.Subscriber("/locobot/camera/color/image_raw", Image, self.on_rec_img)
         rospy.Subscriber("/locobot/camera/aligned_depth_to_color/image_raw", Image, self.on_rec_depth)
 
+        while self.img_rgb is None or self.img_dep is None:
+            rospy.sleep(0.01)
+
+    def reset_obj(self, path_obj):
+        with self.lock_snapshots:
+            with open(path_obj, "rb") as f:
+                snapshots = pickle.load(f)
+            self.imgs_src, self.clds_src, self.masks_src, M_ex_list = zip(*snapshots)
+            self.poses_src = [gmatch.util.mat2pose(M_ex) for M_ex in M_ex_list]
+            self.cache_id = path_obj
+
     def on_rec_img(self, msg):
         with self.lock_rgb:
             self.img_rgb = self.bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
@@ -60,29 +69,21 @@ class PoseEstimator:
         with self.lock_depth:
             self.img_dep = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1") * 1e-3
 
-    def run(self):
-        r = rospy.Rate(1)
-        while not rospy.is_shutdown():
-            with self.lock_rgb:
-                img_rgb = deepcopy(self.img_rgb)
-            with self.lock_depth:
-                img_dep = deepcopy(self.img_dep)
-            if img_rgb is None or img_dep is None:
-                rospy.logwarn("img_rgb or img_dep is not ready. keep waiting...")
-                r.sleep()
-                continue
+    def run_once(self):
+        with self.lock_rgb:
+            img_rgb = deepcopy(self.img_rgb)
+        with self.lock_depth:
+            img_dep = deepcopy(self.img_dep)
+        if img_rgb is None or img_dep is None:
+            rospy.logwarn("img_rgb or img_dep is not ready.")
+            return
+        if self.imgs_src is None:
+            return
 
-            cv2.imshow("rgb", cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR))
-            cv2.imshow("depth", img_dep)
-            key = cv2.waitKey(1)
-            if key == ord("s"):
-                print("save color.png and depth.png")
-                cv2.imwrite("cache/color.png", cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR))
-                cv2.imwrite("cache/depth.png", np.asarray(img_dep * 1e3, dtype=np.uint16))
+        D_near = 1e-2
+        D_far = 1
 
-            D_near = 1e-2
-            D_far = 1
-
+        with self.lock_snapshots:
             match_data = gmatch.util.MatchData(
                 imgs_src=self.imgs_src,
                 clds_src=self.clds_src,
@@ -94,35 +95,47 @@ class PoseEstimator:
             )
 
             t0 = rospy.Time.now()
-            gmatch.Match(match_data, cache_id=rospy.get_name(), debug=self.args.debug)
+            gmatch.Match(match_data, cache_id=self.cache_id, debug=self.args.debug)
             gmatch.util.Solve(match_data)
             # gmatch.util.Refine(match_data)
 
-            L = len(match_data.matches_list[match_data.idx_best])
-            rospy.loginfo(f"gmatch costs {(rospy.Time.now() - t0)*1e-6} ms. match len: {L}")
-            if L < self.args.minL:
-                r.sleep()
-                continue
+        L = len(match_data.matches_list[match_data.idx_best])
+        rospy.loginfo(f"gmatch costs {(rospy.Time.now() - t0)*1e-6} ms. match len: {L}")
+        if L < self.args.minL:
+            return
 
-            pos, rot = gmatch.util.mat2pose(match_data.mat_m2c)
+        pos, rot = gmatch.util.mat2pose(match_data.mat_m2c)
 
-            msg = TransformStamped()
-            msg.header.stamp = rospy.Time.now()
-            msg.header.frame_id = self.coord_cam
-            msg.child_frame_id = self.coord_targ
-            msg.transform.translation = Vector3(*pos)
-            msg.transform.rotation = Quaternion(*rot)
+        msg = TransformStamped()
+        msg.header.stamp = rospy.Time.now()
+        msg.header.frame_id = self.coord_cam
+        msg.child_frame_id = self.coord_targ
+        msg.transform.translation = Vector3(*pos)
+        msg.transform.rotation = Quaternion(*rot)
 
-            self.tf_pub.sendTransform(msg)
+        self.tf_pub.sendTransform(msg)
 
+    def run(self):
+        r = rospy.Rate(1)
+        while not rospy.is_shutdown():
+            self.run_once()
+            cv2.imshow("rgb", cv2.cvtColor(self.img_rgb, cv2.COLOR_RGB2BGR))
+            cv2.imshow("depth", self.img_dep)
+            key = cv2.waitKey(1)
+            if key == ord("s"):
+                print("save color.png and depth.png")
+                cv2.imwrite("cache/color.png", cv2.cvtColor(self.img_rgb, cv2.COLOR_RGB2BGR))
+                cv2.imwrite("cache/depth.png", np.asarray(self.img_dep * 1e3, dtype=np.uint16))
             r.sleep()
 
 
 if __name__ == "__main__":
+    rospy.init_node("pose_estimate", anonymous=True)
     parser = argparse.ArgumentParser(description="Estimate 6D pose of given object.")
     parser.add_argument("path_object", help="Path to snapshots file (typically ends with .pt).")
     parser.add_argument("--minL", type=int, required=True, help="Min length of matches to use.")
     parser.add_argument("--debug", type=int, default=-1, help="Debug level, bigger means more info.")
     args = parser.parse_args()
     estim = PoseEstimator(args)
+    estim.reset_obj(args.path_object)
     estim.run()
