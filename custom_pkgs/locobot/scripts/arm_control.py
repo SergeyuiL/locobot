@@ -84,9 +84,6 @@ class LocobotArm:
         self.ctl_state_sub = rospy.Subscriber(
             "/locobot/arm_controller/state", JointTrajectoryControllerState, self.on_ctl_state
         )
-        # self.tf_buffer.lookup_transform(
-        #     "locobot/arm_base_link", "locobot/ee_arm_link", rospy.Time(0), rospy.Duration(5.0)
-        # )
 
         if serving:
             ## reach goal poses (with any path)
@@ -165,10 +162,10 @@ class LocobotArm:
             self.arm_group.set_pose_target(pose)
             succ, traj, _, _ = self.arm_group.plan()
             traj: RobotTrajectory
-            print(f"{i}->{i+1}: {'success' if succ else 'fail'}")
+            # print(f"{i}->{i+1}: {'success' if succ else 'fail'}")
             if not succ:
                 return 1
-            self.print_traj(traj)
+            # self.print_traj(traj)
             trajs.append(traj)
             tmp = list(stat0.joint_state.position)
             tmp[2:8] = traj.joint_trajectory.points[-1].positions
@@ -185,8 +182,8 @@ class LocobotArm:
             velocity_scaling_factor=self.scale_factor,
             acceleration_scaling_factor=self.scale_factor,
         )
-        print("retimed traj:")
-        self.print_traj(traj_retime)
+        # print("retimed traj:")
+        # self.print_traj(traj_retime)
         self.arm_group.execute(traj_retime)
         return 0 if np.max(self.joint_states_err) < 5e-2 else 2
 

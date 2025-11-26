@@ -24,7 +24,6 @@ class Chassis:
 
         rospy.Timer(rospy.Duration(0.1), self.publish_pose)
 
-
     def on_chassis_control(self, req: SetPose2DRequest):
         self.reached = False
         quat = tf.transformations.quaternion_from_euler(0, 0, req.theta)
@@ -57,10 +56,8 @@ class Chassis:
         ## look up `robot_base_frame` in "<locobot>/launch/move_base.launch"
         robot_base_frame = "locobot/base_footprint"
         map_frame = "map"
-        if self.tf_buf.can_transform(robot_base_frame, map_frame, rospy.Time(0)):
-            trans_stamped: TransformStamped = self.tf_buf.lookup_transform(
-                robot_base_frame, map_frame, rospy.Time(0)
-            )
+        if self.tf_buf.can_transform(map_frame, robot_base_frame, rospy.Time(0)):
+            trans_stamped: TransformStamped = self.tf_buf.lookup_transform(map_frame, robot_base_frame, rospy.Time(0))
             quat = trans_stamped.transform.rotation
             msg.x = trans_stamped.transform.translation.x
             msg.y = trans_stamped.transform.translation.y
