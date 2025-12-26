@@ -10,53 +10,65 @@ from demo import *
 from pose_estimate import PoseEstimator
 
 
-# client = OpenAI(
-#     # 若没有配置环境变量，请用百炼API Key将下行替换为：api_key="sk-xxx"
-#     api_key=os.getenv("DASHSCOPE_API_KEY"),
-#     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-# )
+def vlm_plan(task_descr, local=False):
+    if local:
+        # Locally Deployed Qwen API
+        url = "http://v100:8000/v1"
+        api_key = ""
+        model_name = "Qwen/Qwen2.5-14B-Instruct"
+    else:
+        # Remote Qwen API
+        url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        api_key = (os.getenv("DASHSCOPE_API_KEY"),)
+        model_name = "qwen-plus"
 
-# template = """
-# You are a robotic task planner. Your job is to extract the **source object** (to be grasped) and the **target container/object** (to place into/on) from a high-level instruction.
+    client = OpenAI(api_key=api_key, base_url=url)
 
-# You have two operations available:
-# 1. grasp <source_object>: to pick up the source object.
-# 2. place <target_object>: to put down the source object into/on the target object.
+    template = """
+    You are a robotic task planner. Your job is to parse the given instruction to generate a list of commands from the robotic skill library.
+    <skill_library>
+        <OP1> obj1, ... </OP1>
+        <OP2> obj2, ... </OP2>
+        ...
+    </skill_library>
+    The expected list of commands is 'OP obj1; OP obj2; ...'
 
-# Given a task description, respond with an ordered list of the operation and its argument, formatted as follows:
-# '<OP> <obj1>; <OP> <obj2>; ...'
-# where <OP> is either 'grasp' or 'place'
+    Do NOT add explanations, markdown, or extra fields. In case that either OP is not supported or its operated object is not supported, return 'None'. Here is an example.
 
-# Do NOT add explanations, markdown, or extra fields. In case that either source object or target object is not supported, return 'None'.
+    <example>
+    Given skill library:
+    <skill_library>
+        <grasp>bowl, coke_bottle, handle, pen</grasp>
+        <place>bowl, cabinet, desk, book</place>
+    </skill_library>
+    For task 'put the bottle on the desk', you try to first grasp the bottle and place it on the desk. And then you check that bottle (namely, coke_bottle) is in grasp list and desk in in place list. Finally, you return 'grasp bowl; place desk;'.
+    For task 'put the book on the cabinet', you try to grasp the book then place it on the cabinet. But you find book is not in grasp list (even if it's in place list). Therefore, you should return 'None' instead of 'grasp book; place cabinet;'
+    </example>
 
-# E.g. Given skill library
-#     <grasp>bowl, bottle, handle, pen</grasp>
-#     <place>bowl, cabinet, desk, book</place>
-# for task 'put the pen on the bottle', the response should be: 'None' because 'bottle' is not a valid target object.
-# for task 'put the bowl on the desk', the response should be: 'grasp bowl; place desk'
-# for task 'make up the desk so that the pen is on the book and the book is on the desk', the response should be: 'grasp book; place desk; grasp pen; place book'
+    Now, your skill library is:
+    <skill_library>
+        <grasp>{}</grasp>
+        <place>{}</place>
+    </skill_library>
+    And you need to parse this task: {}
+    """
 
-# Now, your skill library is:
-# <grasp>{}</grasp>
-# <place>{}</place>
-# And you need to parse this task: {}
-# """
+    grasp_targets = "cabinet, coffee_bottle, gum_bottle"
+    place_targets = "sugar_jar, toybox, realsensebox"
 
-# grasp_targets = "bowl, bottle, handle, pen"
-# place_targets = "bowl, cabinet, desk, book"
-# task_descr = "put the pen in the bowl, then put the bowl on the desk"
+    prompt = template.format(grasp_targets, place_targets, task_descr)
 
-# prompt = template.format(grasp_targets, place_targets, task_descr)
+    completion = client.chat.completions.create(
+        model=model_name,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    resp = completion.model_dump_json()
+    result = json.loads(resp)
+    content = result["choices"][0]["message"]["content"]
+    cmds = content.split(";")
+    cmds = list(map(lambda x: x.strip().split(maxsplit=1), cmds))
+    return cmds
 
-# completion = client.chat.completions.create(
-#     # 模型列表：https://help.aliyun.com/zh/model-studio/getting-started/models
-#     model="qwen-plus",
-#     messages=[{"role": "user", "content": prompt}],
-# )
-# resp = completion.model_dump_json()
-# result = json.loads(resp)
-# content = result["choices"][0]["message"]["content"]
-# print(content)
 
 parser = argparse.ArgumentParser(description="VLM task planner that calls atomic skills")
 parser.add_argument("--minL", type=int, default=-1, help="Debug level, bigger means more info.")
@@ -68,9 +80,7 @@ rospy.init_node("vlm")
 d = Demo()
 pe = PoseEstimator(args)
 
-content = "grasp gum_bottle; place realsensebox"
-cmds = content.split(";")
-cmds = list(map(lambda x: x.strip().split(), cmds))
+cmds = vlm_plan("put gum bottle on the realsense box")
 
 with open("./goal_pose.json", "r") as f:
     content = json.load(f)
@@ -79,7 +89,7 @@ tmp = None
 for cmd in cmds:
     op, obj = cmd
     print(f"exec '{op} {obj}'")
-    pe.reset_obj(f'./GMatch/cache/{obj}.pt')
+    pe.reset_obj(f"./GMatch/cache/{obj}.pt")
     pe.run_once()
     rospy.sleep(0.1)
 
@@ -104,12 +114,8 @@ for cmd in cmds:
         d.tf_buf,
     )
 
-    print(goal)
-
-    d.authenticate(f"{op}")
-
     if op == "grasp":
         d.grasp_goal(goal, offset)
         d.arm.move_joints(np.array([0.0, -1.1, 1.55, 0.0, -0.5, 0.0]))
-    else:
+    elif op == "place":
         d.place_goal(goal, offset)
