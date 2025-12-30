@@ -70,15 +70,15 @@ class PoseEstimator:
             self.img_dep = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1") * 1e-3
 
     def run_once(self):
+        """return err_code, err_msg"""
         with self.lock_rgb:
             img_rgb = deepcopy(self.img_rgb)
         with self.lock_depth:
             img_dep = deepcopy(self.img_dep)
         if img_rgb is None or img_dep is None:
-            rospy.logwarn("img_rgb or img_dep is not ready.")
-            return
+            return -1, "img_rgb or img_dep is not ready."
         if self.imgs_src is None:
-            return
+            return -1, "Source images are None, maybe not loaded."
 
         D_near = 1e-2
         D_far = 1
@@ -102,7 +102,7 @@ class PoseEstimator:
         L = len(match_data.matches_list[match_data.idx_best])
         rospy.loginfo(f"gmatch costs {(rospy.Time.now() - t0)*1e-6} ms. match len: {L}")
         if L < self.args.minL:
-            return
+            return -1, f"Not enough matches. current size ({L}) < minL ({self.args.minL})"
 
         pos, rot = gmatch.util.mat2pose(match_data.mat_m2c)
 
@@ -114,6 +114,7 @@ class PoseEstimator:
         msg.transform.rotation = Quaternion(*rot)
 
         self.tf_pub.sendTransform(msg)
+        return 0, "success"
 
     def run(self):
         r = rospy.Rate(1)

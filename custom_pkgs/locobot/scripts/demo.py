@@ -30,6 +30,7 @@ from perception_service.srv import GroundedSam2Infer, GroundedSam2InferRequest, 
 # custom python module
 from arm_control import LocobotArm
 from camera_control import LocobotCamera
+from chassis_control import LocobotChassis
 from wbc import WBC, CartMPC
 
 
@@ -153,10 +154,9 @@ class Demo:
     def init_caller(self):
         # actuation API
         self.arm = LocobotArm(serving=False)
-        self.cam = LocobotCamera()
-        self.chassis_ctl = rospy.ServiceProxy("/locobot/chassis_control", SetPose2D)
+        self.cam = LocobotCamera(serving=False)
+        self.chas = LocobotChassis(serving=False)
         self.gripper_ctl = rospy.ServiceProxy("/locobot/gripper_control", SetBool)
-        self.chassis_vel = rospy.Publisher("/locobot/mobile_base/commands/velocity", Twist, queue_size=10)
         # perception API
         self.grasp_det = rospy.ServiceProxy("/grasp_infer", GraspInfer)
         self.seg_det = rospy.ServiceProxy("/grounded_sam2_infer", GroundedSam2Infer)
@@ -166,7 +166,6 @@ class Demo:
     def wait_services(self):
         rospy.Subscriber("/locobot/camera/color/image_raw", Image, self.on_rec_img)
         rospy.Subscriber("/locobot/camera/aligned_depth_to_color/image_raw", Image, self.on_rec_depth)
-        rospy.Subscriber("/locobot/chassis/current_pose", Pose2D, self.on_rec_pose2d)
 
         rospy.wait_for_service("/locobot/arm_control")
         print("all_control.py is up")
@@ -240,7 +239,7 @@ class Demo:
             self.wbc = WBC()
             self.cart_mpc = CartMPC(mpc_horizon=20, dt=0.05, vmax=0.2, wmax=0.2)
 
-        x0 = np.array([*self.chassis_state, *self.arm.joint_states])
+        x0 = np.array([*self.chas.pose2d, *self.arm.joint_states])
         x = self.wbc.solve(x0, T_g2w)
 
         print(f"desired chassis pose: {x[:3]}; desired arm joints: {x[3:]}")
@@ -254,19 +253,19 @@ class Demo:
                 print("timeout.")
                 break
             # observe
-            x0 = self.chassis_state
+            x0 = self.chas.pose2d
             z0 = z0 + (x0 - x[:3]) * self.cart_mpc.dt if np.linalg.norm(z0) < 0.5 else np.zeros(3)
             print(f"error: {x0 - x[:3]}")
             # solve
             u = self.cart_mpc.solve(x0, z0, x[:3])
             # control
-            self.chassis_vel.publish(Twist(Vector3(u[0], 0, 0), Vector3(0, 0, u[1])))
+            self.chas.pub_vel.publish(Twist(Vector3(u[0], 0, 0), Vector3(0, 0, u[1])))
             # update loop counter
             k += 1
             cnt = 0 if np.linalg.norm(x0 - x[:3]) > 0.05 else cnt + 1
             rate.sleep()
         print(f"final chassis pose: {x0}")
-        self.chassis_vel.publish(Twist())  # stop chassis
+        self.chas.pub_vel.publish(Twist())  # stop chassis
 
         self.arm.move_joints(x[3:])
 
@@ -277,21 +276,20 @@ class Demo:
         return
 
     def grasp_goal(self, goal_pose, offset):
-        """aprroach from negative x-axis and then grasp"""
+        """aprroach to pre-grasp (goal_pose + offset) and then grasp"""
         self.gripper_ctl(False)
         self.reach_goal_with_direction(goal_pose, offset)
         self.gripper_ctl(True)
         return
 
     def place_goal(self, goal_pose, offset):
-        """approach from positive z-axis and then place"""
+        """approach to pre-place (goal_pose + offset) and then place"""
         self.reach_goal_with_direction(goal_pose, offset)
         self.gripper_ctl(False)
         return
 
     def authenticate(self, description: str = ""):
-        """
-        authenticate arm executation for goal pose (ask for 'enter' in terminal)
+        """authenticate arm executation for goal pose (ask for 'enter' in terminal)
         user can check the goal pose ("locobot/ee_goal", "TransformStamped") in rviz
         """
         if input(f"Confirm {description} with Enter:") != "":
@@ -364,9 +362,6 @@ class Demo:
         with self.lock_dep:
             self.img_dep = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1") / 1000.0
             self.cld, _ = reconstruct(self.img_dep, self.cam_intrin)
-
-    def on_rec_pose2d(self, msg: Pose2D):
-        self.chassis_state = ToArray(msg)
 
     def demo_goal(self, path_save, obj_name: str, op_name: str):
         print("Start demo goal wizard.")

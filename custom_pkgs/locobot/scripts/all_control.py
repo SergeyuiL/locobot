@@ -4,12 +4,12 @@ import rospy
 from arm_control import LocobotArm
 from camera_control import LocobotCamera
 from gripper_control import Gripper
-from chassis_control import Chassis
+from chassis_control import LocobotChassis
 
 if __name__ == "__main__":
     rospy.init_node("all_controller")
     gripper = Gripper()
-    chassis = Chassis()
+    chassis = LocobotChassis()
     arm = LocobotArm()
     camera = LocobotCamera()
     print("arm gripper camera and chassis are brought up.")

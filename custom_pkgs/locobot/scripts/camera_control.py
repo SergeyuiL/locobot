@@ -10,7 +10,7 @@ from locobot.srv import SetFloat32, SetFloat32Request, SetFloat32Response
 class LocobotCamera:
     """provide services to adjust the camera pitch and yaw (currently scanning, maybe add angle control later)"""
 
-    def __init__(self) -> None:
+    def __init__(self, serving=True) -> None:
         dxl = InterbotixRobotXSCore(
             robot_model="wx250s",
             robot_name="locobot",
@@ -36,8 +36,9 @@ class LocobotCamera:
         self.pitch_limits = (pitch_config["lower_limit"], pitch_config["upper_limit"])
         self.yaw_limits = (yaw_config["lower_limit"], yaw_config["upper_limit"])
 
-        self.pitch_server = rospy.Service("/locobot/camera_pitch_control", SetFloat32, self.on_rec_pitch)
-        self.yaw_server = rospy.Service("/locobot/camera_yaw_control", SetFloat32, self.on_rec_yaw)
+        if serving:
+            self.pitch_server = rospy.Service("/locobot/camera_pitch_control", SetFloat32, self.on_rec_pitch)
+            self.yaw_server = rospy.Service("/locobot/camera_yaw_control", SetFloat32, self.on_rec_yaw)
         self.reset_camera()
 
     def reset_camera(self):

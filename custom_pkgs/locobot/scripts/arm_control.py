@@ -70,6 +70,11 @@ class LocobotArm:
     joint_names = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
 
     def __init__(self, serving=True) -> None:
+        # state variables to access
+        self.joint_states = None
+        self.joint_states_goal = None
+        self.joint_states_err = None
+
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer)
 
@@ -83,18 +88,20 @@ class LocobotArm:
         self.ctl_state_sub = rospy.Subscriber(
             "/locobot/arm_controller/state", JointTrajectoryControllerState, self.on_ctl_state
         )
+        rospy.wait_for_message("/locobot/arm_controller/state", JointTrajectoryControllerState)
 
         if serving:
             ## reach goal poses (with any path)
             rospy.Service("/locobot/arm_control", SetPoseArray, self.reach)
             ## reach goal pose with cartesian path
-            rospy.Service("locobot/arm_control_cartesian", SetPose, self.reach_c)
+            rospy.Service("/locobot/arm_control_cartesian", SetPose, self.reach_c)
             ## config arm velocity and acceleration (scaling factor)
-            rospy.Service("locobot/arm_config", SetFloat32, self.arm_config)
+            rospy.Service("/locobot/arm_config", SetFloat32, self.arm_config)
             ## for quick test
             rospy.Service("/locobot/arm_sleep", SetBool, self.sleep)
             ## for emergency stop
-            rospy.Service("locobot/arm_stop", SetBool, self.stop)
+            rospy.Service("/locobot/arm_stop", SetBool, self.stop)
+        rospy.loginfo("LocobotArm initialized")
 
     @property
     def end_pose(self) -> Tuple[np.ndarray, np.ndarray]:
