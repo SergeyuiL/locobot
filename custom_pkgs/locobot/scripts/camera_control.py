@@ -37,6 +37,7 @@ class LocobotCamera:
         self.yaw_limits = (yaw_config["lower_limit"], yaw_config["upper_limit"])
 
         if serving:
+            # for debugging in terminal
             self.pitch_server = rospy.Service("/locobot/camera_pitch_control", SetFloat32, self.on_rec_pitch)
             self.yaw_server = rospy.Service("/locobot/camera_yaw_control", SetFloat32, self.on_rec_yaw)
         self.reset_camera()
@@ -45,11 +46,11 @@ class LocobotCamera:
         self.turret.pan_tilt_move(pan_position=self.init_yaw, tilt_position=self.init_pitch)
 
     @property
-    def curr_yaw(self):
+    def yaw(self):
         return self.turret.get_joint_commands()[0]
 
     @property
-    def curr_pitch(self):
+    def pitch(self):
         return self.turret.get_joint_commands()[1]
 
     def on_rec_pitch(self, req: SetFloat32Request):

@@ -1,4 +1,6 @@
+# usage: init a SKillLib object with a Demo object (aka, robot interface) and a PoseEstimator object, then init a VLMPlanner object with the skill library
 import os
+import os.path as osp
 import json
 import rospy
 import argparse
@@ -11,19 +13,11 @@ from demo import *
 from pose_estimate import PoseEstimator
 
 # global variables
-robo_iface = None
-pose_estim = None
 content = None
 
 # init global variables
-rospy.init_node("vlm")
-robo_iface = Demo()
-parser = argparse.ArgumentParser(description="VLM task planner that calls atomic skills")
-parser.add_argument("--minL", type=int, default=-1, help="Debug level, bigger means more info.")
-parser.add_argument("--debug", type=int, default=-1, help="Debug level, bigger means more info.")
-args = parser.parse_args()
-pose_estim = PoseEstimator(args)
-with open("./goal_pose.json", "r") as f:
+path_gpose = osp.join(osp.dirname(osp.abspath(__file__)), "goal_pose.json")
+with open(path_gpose, "r") as f:
     content = json.load(f)
 
 
@@ -39,18 +33,18 @@ class VLMPlanner:
         """use doc str and func name in `skill_library` to build skills description"""
         # TODO: not sure formatting here works as expected. since \t and spaces may be mixed.
         self.context = ""
+        self.IND = " " * 4
 
         self.skill_lib = skill_lib
 
         self.system_descr = """
-        You are a robotic task planner. Your job is to parse the given instruction to generate a list of commands from the robotic skill library (formatted as XML).
-
+        You are a robotic task planner. Your job is to parse the given instruction to generate a list of commands from the robotic skill library (formatted as XML). Specifically, given skill library like:
         <skill_library>
-        <skill name="OP1"> description1 </skill>
-        <skill name="OP2"> description2 </skill>
-        ...
-        </skill_library>
-        The expected format of commands is 'OP obj; ...'
+            <skill name="OP1"> description1 </skill>
+            <skill name="OP2"> description2 </skill>
+            ...
+        </skill_library>,
+        the expected format of commands is 'OP obj; ...'
 
         Do NOT add explanations, markdown, or extra fields.
 
@@ -81,12 +75,15 @@ class VLMPlanner:
         self.skills_descr = """
         Now, your skill library is:
         <skill_library>
-            {}
+        {}
         </skill_library>
         """
         self.skills_descr = _dedent(self.skills_descr.strip())
-        skill_entries = [VLMPlanner.skill_temp.format(name, func.__doc__) for name, func in skill_lib.items()]
-        tmp = textwrap.indent("\n".join(skill_entries), "\t")
+        skill_entries = [
+            VLMPlanner.skill_temp.format(name, textwrap.indent(_dedent(func.__doc__), self.IND))
+            for name, func in skill_lib.items()
+        ]
+        tmp = textwrap.indent("\n".join(skill_entries), self.IND)
         self.skills_descr = self.skills_descr.format(tmp)
 
         # task template
@@ -97,7 +94,7 @@ class VLMPlanner:
         print(self.system_descr)
         print("==============Skills description==============")
         print(self.skills_descr)
-        print("===============================================")
+        print("==============================================")
 
         if local:
             # Locally Deployed Qwen API
@@ -133,180 +130,189 @@ class VLMPlanner:
         pass
 
 
-grasp_objs = [key for key in content.keys() if content[key]["type"] == "grasp"]
-place_objs = [key for key in content.keys() if content[key]["type"] == "place"]
-
-
 class SkillLib:
-    @staticmethod
-    def grasp(obj: str):
-        f"""Grasp given object.
+    def __init__(self, robo_iface: Demo, pose_estim: PoseEstimator):
+        self.robo = robo_iface
+        self.estim = pose_estim
+
+    def grasp(self, obj: str):
+        """Grasp given object.
         Args:
-            obj: str, supported list: {grasp_objs}
+            obj: str, supported list: [{}]
         Returns:
             log: str, execution log
         """
-        log = f"Executing 'grasp {obj}'"
+        log = f"Executing 'grasp {obj}'\n"
         try:
-            pose_estim.reset_obj(f"./GMatch/cache/{obj}.pt")
-            pose_estim.run_once()
+            self.estim.reset_obj(f"./GMatch/cache/{obj}.pt")
+            errcode, errmsg = self.estim.run_once()
+            if errcode != 0:
+                raise RuntimeError(errmsg)
             rospy.sleep(0.1)
-            log += "\nPose estimation done."
+            log += "Pose estimation done.\n"
 
             goal_pose = content[obj]["goal_pose"]
             offset = content[obj]["offset"]
-            log += f"\nGoal pose loaded ({goal_pose})."
+            log += f"Goal pose loaded ({goal_pose}).\n"
             p, q = goal_pose[:3], goal_pose[3:]
             # publish static transformation
             msg = TransformStamped()
             msg.header.stamp = rospy.Time.now()
-            msg.header.frame_id = robo_iface.coord_targ
-            msg.child_frame_id = robo_iface.coord_ee_goal
+            msg.header.frame_id = self.robo.coord_targ
+            msg.child_frame_id = self.robo.coord_ee_goal
             msg.transform.translation = Vector3(*p)
             msg.transform.rotation = Quaternion(*q)
-            robo_iface.tf_spub.sendTransform(msg)
+            self.robo.tf_spub.sendTransform(msg)
             rospy.sleep(0.1)
 
-            goal = transform_pose(robo_iface.coord_map, robo_iface.coord_ee_goal)
-            log += "\nGoal pose published and transformed."
+            goal = transform_pose(self.robo.tf_buf, self.robo.coord_map, self.robo.coord_ee_goal)
+            log += "Goal pose published and transformed.\n"
 
-            robo_iface.grasp_goal(goal, offset)
-            log += "\nGrasp action executed."
-            robo_iface.arm.move_joints(np.array([0.0, -1.1, 1.55, 0.0, -0.5, 0.0]))
-            log += f"\nGrasping {obj} finished and move to ready state."
+            self.robo.grasp_goal(goal, offset)
+            log += "Grasp action executed.\n"
+            self.robo.arm.move_joints(np.array([0.0, -1.1, 1.55, 0.0, -0.5, 0.0]))
+            log += f"Grasping {obj} finished and move to ready state.\n"
         except Exception as e:
-            log += f"\nGrasping {obj} failed with exception: {e}"
+            e = textwrap.indent(str(e))
+            log += f"Grasping {obj} failed with exception: \n{e}\n"
         return log
 
-    @staticmethod
-    def place(obj: str):
-        f"""Place given object on target location.
+    def place(self, obj: str):
+        """Place given object on target location.
         Args:
-            obj: str, supported list: {place_objs}
+            obj: str, supported list: [{}]
         Returns:
             log: str, execution log
         """
-        log = f"Executing 'place {obj}'"
+        log = f"Executing 'place {obj}'\n"
         try:
-            pose_estim.reset_obj(f"./GMatch/cache/{obj}.pt")
-            pose_estim.run_once()
+            self.estim.reset_obj(f"./GMatch/cache/{obj}.pt")
+            self.estim.run_once()
             rospy.sleep(0.1)
-            log += "\nPose estimation done."
+            log += "Pose estimation done.\n"
 
             goal_pose = content[obj]["goal_pose"]
             offset = content[obj]["offset"]
             p, q = goal_pose[:3], goal_pose[3:]
-            log += f"\nGoal pose loaded ({goal_pose})."
+            log += f"Goal pose loaded ({goal_pose}).\n"
 
             # publish static transformation
             msg = TransformStamped()
             msg.header.stamp = rospy.Time.now()
-            msg.header.frame_id = robo_iface.coord_targ
-            msg.child_frame_id = robo_iface.coord_ee_goal
+            msg.header.frame_id = self.robo.coord_targ
+            msg.child_frame_id = self.robo.coord_ee_goal
             msg.transform.translation = Vector3(*p)
             msg.transform.rotation = Quaternion(*q)
-            robo_iface.tf_spub.sendTransform(msg)
+            self.robo.tf_spub.sendTransform(msg)
             rospy.sleep(0.1)
 
-            goal = transform_pose(robo_iface.coord_map, robo_iface.coord_ee_goal)
-            log += "\nGoal pose published and transformed."
+            goal = transform_pose(self.robo.tf_buf, self.robo.coord_map, self.robo.coord_ee_goal)
+            log += "Goal pose published and transformed.\n"
 
-            robo_iface.place_goal(goal, offset)
-            log += "\nPlace action executed."
+            self.robo.place_goal(goal, offset)
+            log += "Place action executed.\n"
         except Exception as e:
-            log += f"\nPlacing {obj} failed with exception: {e}"
+            e = textwrap.indent(str(e))
+            log += f"Placing {obj} failed with exception: \n{e}\n"
         return log
 
-    @staticmethod
-    def look(dir: str):
+    def look(self, dir: str):
         """Look more in given direction (0.2 rad).
         Args:
             dir: str, supported list: [left, right, up, down]
         Returns:
             log: str, execution log
         """
-        log = f"Executing 'look {dir}'"
+        log = f"Executing 'look {dir}'\n"
         try:
             if dir not in ["left", "right", "up", "down"]:
                 raise ValueError("Invalid direction argument. (supported: left, right, up, down)")
-            c = robo_iface.cam
-            if dir == "left":
-                robo_iface.cam.turret.pan(c.curr_yaw + 0.2)
-            elif dir == "right":
-                robo_iface.cam.turret.pan(c.curr_yaw - 0.2)
-            elif dir == "up":
-                robo_iface.cam.turret.tilt(c.curr_pitch - 0.2)
-            elif dir == "down":
-                robo_iface.cam.turret.tilt(c.curr_pitch + 0.2)
-            log += f"Look action executed. curr_yaw: {c.curr_yaw}, curr_pitch: {c.curr_pitch}; yaw limits: {c.turret.yaw_limits}, pitch limits: {c.turret.pitch_limits}"
+            c = self.robo.cam
+            yaw1, pitch1 = c.yaw, c.pitch
+            if dir in ["left", "right"]:
+                yaw1 += 0.2 if dir == "left" else -0.2
+            else:
+                pitch1 += -0.2 if dir == "up" else 0.2
+            if not (c.yaw_limits[0] <= yaw1 <= c.yaw_limits[1]):
+                raise ValueError(f"Yaw {yaw1} out of limits {c.yaw_limits}!")
+            if not (c.pitch_limits[0] <= pitch1 <= c.pitch_limits[1]):
+                raise ValueError(f"Pitch {pitch1} out of limits {c.pitch_limits}!")
+            c.turret.pan_tilt_move(pan_position=yaw1, tilt_position=pitch1)
+            log += f"Look action executed. curr_yaw: {c.yaw}, curr_pitch: {c.pitch}; yaw limits: {c.yaw_limits}, pitch limits: {c.pitch_limits}\n"
         except Exception as e:
-            log += f"\nLooking {dir} failed with exception: {e}"
+            e = textwrap.indent(str(e))
+            log += f"Looking {dir} failed with exception: \n{e}\n"
         return log
 
-    @staticmethod
-    def move(dir: str):
-        """Move robot in given direction (0.3 m/s by 1 second, open-loop).
+    def move(self, dir: str):
+        """Move robot in given direction by 0.2m. The orientation remains the same.
         Args:
             dir: str, supported list: [forward, backward, left, right]
         Returns:
             log: str, execution log
         """
-        log = f"Executing 'move {dir}'"
+        log = f"Executing 'move {dir}'\n"
         try:
-            v = 0.3
-            msg = Twist()
             if dir not in ["forward", "backward", "left", "right"]:
                 raise ValueError("Invalid direction argument. (supported: forward, backward, left, right)")
-            if dir in ["forward", "backward"]:
-                sgn = 1 if dir == "forward" else -1
-                msg.linear.x = sgn * v
-                robo_iface.chas.pub_vel.publish(msg)
-                rospy.sleep(1)
-                robo_iface.chas.pub_vel.publish(Twist())
-            else:
-                log += f"\nRotating {dir} first."
-                sgn = 1 if dir == "left" else -1
-                robo_iface.chas.rotate(sgn * np.pi / 2)
-                log += "\nMoving forward."
-                msg.linear.x = v
-                robo_iface.chas.pub_vel.publish(msg)
-                rospy.sleep(1)
-                robo_iface.chas.pub_vel.publish(Twist())
-                log += "\nRotating back."
-                robo_iface.chas.rotate(-sgn * np.pi / 2)
-            log += "Move action executed."
+            x0, y0, theta0 = self.robo.chas.pose2d
+            i = ["forward", "left", "backward", "right"].index(dir)
+            theta1 = theta0 + i * (np.pi / 2)
+            x1 = x0 + 0.2 * np.cos(theta1)
+            y1 = y0 + 0.2 * np.sin(theta1)
+            self.robo.chas.reach(x1, y1, theta=theta0)
+            log += "Move action executed.\n"
         except Exception as e:
-            log += f"\nMoving {dir} failed with exception: {e}"
+            e = textwrap.indent(str(e))
+            log += f"Moving {dir} failed with exception: \n{e}\n"
         return log
 
-    @staticmethod
-    def turn(dir: str):
-        """Turn robot in given direction (90 degrees, close-loop).
+    def turn(self, dir: str):
+        """Turn robot to given direction (90 degrees, close-loop).
         Args:
             dir: str, supported list: [left, right]
         Returns:
             log: str, execution log
         """
-        log = f"Executing 'turn {dir}'"
+        log = f"Executing 'turn {dir}'\n"
         try:
             if dir not in ["left", "right"]:
                 raise ValueError("Invalid direction argument. (supported: left, right)")
             angle = np.pi / 2 if dir == "left" else -np.pi / 2
-            robo_iface.chas.rotate(angle)
-            log += "Turn action executed."
+            self.robo.chas.rotate(angle)
+            log += "Turn action executed.\n"
         except Exception as e:
-            log += f"\nTurning {dir} failed with exception: {e}"
+            e = textwrap.indent(str(e))
+            log += f"Turning {dir} failed with exception: \n{e}\n"
         return log
 
     # @staticmethod
     # def gsam(cmd): ...
 
+
+grasp_objs = [key for key in content.keys() if content[key]["type"] == "grasp"]
+place_objs = [key for key in content.keys() if content[key]["type"] == "place"]
+SkillLib.grasp.__doc__ = SkillLib.grasp.__doc__.format(", ".join(grasp_objs))
+SkillLib.place.__doc__ = SkillLib.place.__doc__.format(", ".join(place_objs))
+
+
 if __name__ == "__main__":
-    # skill library in dictionary
-    sl = {fo: getattr(SkillLib, fo) for fo in dir(SkillLib) if not fo.startswith("__")}
+    rospy.init_node("vlm")
+
+    robo_iface = Demo()
+
+    parser = argparse.ArgumentParser(description="VLM task planner that calls atomic skills")
+    parser.add_argument("--minL", type=int, default=8, help="Min length of matches to use.")
+    parser.add_argument("--debug", type=int, default=-1, help="Debug level, bigger means more info.")
+    args = parser.parse_args()
+    pose_estim = PoseEstimator(args)
+
+    sl_obj = SkillLib(robo_iface, pose_estim)
+    sl = {fo: getattr(sl_obj, fo) for fo in dir(SkillLib) if not fo.startswith("__")}
 
     planner = VLMPlanner(skill_lib=sl, local=False)
-    cmds = planner.plan("put gum bottle on the realsense box")
+    breakpoint()
+    cmds = planner.plan("come close to put gum bottle on the realsense box")
 
     for cmd in cmds:
         sl[cmd[0]]()

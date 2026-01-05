@@ -35,8 +35,6 @@ from wbc import WBC, CartMPC
 
 
 np.set_printoptions(precision=3, suppress=True)
-tf_buf = tf2_ros.Buffer()
-tf2_ros.TransformListener(tf_buf)
 
 
 def ToArray(msg) -> np.ndarray:
@@ -44,11 +42,10 @@ def ToArray(msg) -> np.ndarray:
     return np.array([getattr(msg, key) for key in msg.__slots__])
 
 
-def transform_pose(dst_frame: str, src_frame: str, pose: Pose = None) -> Pose:
+def transform_pose(tf_buf, dst_frame: str, src_frame: str, pose: Pose = None) -> Pose:
     """transform `pose` from `src_frame` to `dst_frame` with current tf.
     Note: if `pose` is not provided, then pose_src2targ will be returned.
     """
-    global tf_buf
     while not tf_buf.can_transform(dst_frame, src_frame, rospy.Time(0)):
         rospy.sleep(0.1)
     if pose is None:
@@ -60,7 +57,7 @@ def transform_pose(dst_frame: str, src_frame: str, pose: Pose = None) -> Pose:
     return tf_buf.transform(msg, dst_frame).pose
 
 
-def transform_vec(dst_frame: str, src_frame: str, vec: Vector3) -> Vector3:
+def transform_vec(tf_buf, dst_frame: str, src_frame: str, vec: Vector3) -> Vector3:
     """transform vector from `src_frame` to `dst_frame` now."""
     while not tf_buf.can_transform(dst_frame, src_frame, rospy.Time(0)):
         rospy.sleep(0.2)
@@ -145,9 +142,11 @@ class Demo:
 
         # ros objects
         self.bridge = CvBridge()
-        self.tf_buf = tf_buf
+        self.tf_buf = tf2_ros.Buffer()
+        tf2_ros.TransformListener(self.tf_buf)
         self.tf_pub = tf2_ros.TransformBroadcaster()
         self.tf_spub = tf2_ros.StaticTransformBroadcaster()
+
         # YOLO object
         # self.model = YOLO()
 
@@ -194,7 +193,7 @@ class Demo:
             pts = cld[np.nonzero(mask)]  # (n, 3)
             pts = pts[np.nonzero(pts[2] > 0.1), :]  # filter out points with depth < 0.1
             pos = pts.mean()
-            t = transform_vec(self.coord_map, self.coord_cam, Vector3(*pos))
+            t = transform_vec(self.tf_buf, self.coord_map, self.coord_cam, Vector3(*pos))
             pos_glb = np.array([t.x, t.y, t.z])
             if label not in self.map:
                 print(f"add {label} to map at {pos_glb} at {rospy.Time.now() - self.t0:.1f} sec")
@@ -207,9 +206,9 @@ class Demo:
         Note: `goal_pose` is w.r.t. the map frame and offset is w.r.t. the arm_base frame
         """
         # reach pre-goal (goal_pose + offset)
-        vec = transform_vec(self.coord_map, self.coord_ee_goal, Vector3(*offset))
+        vec = transform_vec(self.tf_buf, self.coord_map, self.coord_ee_goal, Vector3(*offset))
         goal_pre = translate(goal_pose, vec)
-        ee_goal = transform_pose(self.coord_arm_base, self.coord_map, goal_pre)
+        ee_goal = transform_pose(self.tf_buf, self.coord_arm_base, self.coord_map, goal_pre)
         self.arm.move_to_poses([ee_goal])
 
         oc = OrientationConstraint()
@@ -224,13 +223,13 @@ class Demo:
         constraints.orientation_constraints.append(oc)
         self.arm.arm_group.set_path_constraints(constraints)
 
-        ee_goal = transform_pose(self.coord_arm_base, self.coord_map, goal_pose)
+        ee_goal = transform_pose(self.tf_buf, self.coord_arm_base, self.coord_map, goal_pose)
         self.arm.move_to_poses([ee_goal])
         self.arm.arm_group.clear_path_constraints()
 
     def approach(self, goal_pose, offset):
         # reach pre-goal (goal_pose + offset)
-        vec = transform_vec(self.coord_map, self.coord_ee_goal, Vector3(*offset))
+        vec = transform_vec(self.tf_buf, self.coord_map, self.coord_ee_goal, Vector3(*offset))
         goal_pre = translate(goal_pose, vec)
 
         T_g2w = Pose2Mat(goal_pre)  # goal w.r.t. world
@@ -318,7 +317,7 @@ class Demo:
         print(f"grasps generated ({(rospy.Time.now() - t0).to_sec():.1f} sec)")
         # `goal` is in the same link with `depth`
         goal = self._filt_grps(grasps)
-        goal = transform_pose(self.coord_map, self.coord_cam, goal)
+        goal = transform_pose(self.tf_buf, self.coord_map, self.coord_cam, goal)
         self.grasp_goal(goal)
 
     def _filt_grps(self, grasps: PoseArray):
@@ -366,7 +365,7 @@ class Demo:
     def demo_goal(self, path_save, obj_name: str, op_name: str):
         print("Start demo goal wizard.")
 
-        pose_targ2cam = transform_pose(self.coord_cam, self.coord_targ)
+        pose_targ2cam = transform_pose(self.tf_buf, self.coord_cam, self.coord_targ)
 
         print("Now, manually set the robot arm to the goal pose.")
         print("Do NOT move camera during that process.")
@@ -380,7 +379,7 @@ class Demo:
         offset = np.round(offset, 3)
 
         # get goal pose (in coord_targ)
-        pose_targ2goal = transform_pose(self.coord_gripper, self.coord_cam, pose_targ2cam)
+        pose_targ2goal = transform_pose(self.tf_buf, self.coord_gripper, self.coord_cam, pose_targ2cam)
 
         T = Pose2Mat(pose_targ2goal)
         pose = Mat2Pose(np.linalg.inv(T))
@@ -442,7 +441,7 @@ if __name__ == "__main__":
 
     demo.authenticate("Perform grasp/place.")
 
-    goal = transform_pose(demo.coord_map, demo.coord_ee_goal)
+    goal = transform_pose(demo.tf_buf, demo.coord_map, demo.coord_ee_goal)
     if op == "grasp":
         demo.grasp_goal(goal, offset)
     else:
